@@ -49,9 +49,9 @@ def validate_nested_masks(value: npt.ArrayLike) -> np.ndarray[Any, Any]:
         raise EvidenceError("invalid_mask_shape", "expected (3,Z,Y,X)")
     tc, wt, et = masks
     if bool(np.any(et & ~tc)):
-        raise EvidenceError("invalid_nested_regions", "ET must be a subset of TC")
+        raise EvidenceError("et_not_subset_tc", "ET must be a subset of TC")
     if bool(np.any(tc & ~wt)):
-        raise EvidenceError("invalid_nested_regions", "TC must be a subset of WT")
+        raise EvidenceError("tc_not_subset_wt", "TC must be a subset of WT")
     return masks
 
 

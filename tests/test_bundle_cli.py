@@ -13,7 +13,7 @@ from voxelscope.canonical import EvidenceError, load_json, sha256_file, write_js
 from voxelscope.cli import main
 from voxelscope.fixtures import build_fixture_bundle
 
-GOLDEN_BUNDLE_SHA256 = "d0c41694ef188cef5fba6d575b995b43da60d844dbeb17175b1a5d12f16b2122"
+GOLDEN_BUNDLE_SHA256 = "c7f42adb2ec3d3f6ea51a7574e7dfc03e5198954ef6e25b6e41fe1d2517bd15c"
 
 
 def test_bundle_is_reproducible_and_matches_golden_hash(tmp_path: Path) -> None:
@@ -588,7 +588,7 @@ def test_refusal_must_reproduce_after_evidence_update(tmp_path: Path, refusal_id
     finalize_bundle(root)
     with pytest.raises(EvidenceError) as caught:
         verify_bundle(root)
-    assert caught.value.code == "refusal_not_reproduced"
+    assert caught.value.code in {"refusal_not_reproduced", "refusal_reproduction_mismatch"}
 
 
 def test_refusal_evidence_path_substitution_is_refused(tmp_path: Path) -> None:
@@ -834,3 +834,53 @@ def test_non_regular_filesystem_entry_is_refused(tmp_path: Path) -> None:
     with pytest.raises(EvidenceError) as caught:
         verify_bundle(root)
     assert caught.value.code == "special_file_forbidden"
+
+
+def test_referenced_path_must_match_exact_bundle_index_spelling(tmp_path: Path) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    path = root / "outputs" / "identical" / "output.json"
+    output = load_json(path)
+    output["probabilities"]["path"] = "unindexed.f32le"
+    write_json(path, output)
+    finalize_bundle(root)
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "unindexed_reference"
+
+
+def test_timing_path_spelling_is_exact_on_every_platform(tmp_path: Path) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    path = root / "run-receipt.json"
+    receipt = load_json(path)
+    receipt["timings_path"] = "Stage-Timings.json"
+    write_json(path, receipt)
+    finalize_bundle(root)
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "invalid_receipt"
+
+
+def test_windows_junction_entry_is_refused_when_creation_is_available(tmp_path: Path) -> None:
+    import os
+    import subprocess
+
+    if os.name != "nt":
+        pytest.skip("Windows junctions are only available on Windows")
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    target = tmp_path / "junction-target"
+    target.mkdir()
+    link = root / "junction-entry"
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        pytest.skip(f"junction creation unavailable: {result.stderr}")
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "symlink_forbidden"

@@ -70,7 +70,7 @@ class SyntheticRefusalContract:
 SYNTHETIC_REFUSALS = (
     SyntheticRefusalContract(
         "invalid-nesting",
-        "invalid_nested_regions",
+        "et_not_subset_tc",
         "refused",
         "postprocess",
         "ET is not a subset of TC",

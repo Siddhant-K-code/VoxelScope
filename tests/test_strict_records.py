@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from voxelscope.canonical import EvidenceError
@@ -86,3 +88,42 @@ def test_huge_json_integer_becomes_evidence_error() -> None:
     with pytest.raises(EvidenceError) as caught:
         require_number(10**400, "huge")
     assert caught.value.code == "invalid_json_type"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "folder/name:stream",
+        "folder/trailing.",
+        "folder/trailing ",
+        "folder/control\x00name",
+        "folder/control\x1fname",
+        "folder/control\x7fname",
+        "CON",
+        "con.txt",
+        "PRN.json",
+        "AUX",
+        "NUL.bin",
+        "COM1",
+        "com9.log",
+        "LPT1",
+        "lpt9.txt",
+    ],
+)
+def test_safe_relative_path_rejects_windows_ambiguous_names(value: str) -> None:
+    from voxelscope.canonical import safe_relative_path
+
+    with pytest.raises(EvidenceError) as caught:
+        safe_relative_path(value)
+    assert caught.value.code == "unsafe_path"
+
+
+def test_link_like_helper_detects_mocked_junction(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from voxelscope.canonical import is_link_like
+
+    target = tmp_path / "junction"
+    target.mkdir()
+    monkeypatch.setattr(type(target), "is_junction", lambda self: self == target, raising=False)
+    assert is_link_like(target)

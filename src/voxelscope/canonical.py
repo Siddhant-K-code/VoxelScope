@@ -6,10 +6,12 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
+import stat
 from collections.abc import Mapping
 from dataclasses import asdict, is_dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any, NoReturn
+from typing import Any, NoReturn, cast
 
 
 class EvidenceError(ValueError):
@@ -98,26 +100,52 @@ def require_sha256(value: str, field: str = "sha256") -> None:
         raise EvidenceError("invalid_sha256", f"{field} is not lowercase SHA-256")
 
 
+_DOS_RESERVED_BASENAMES = frozenset(
+    {"CON", "PRN", "AUX", "NUL"}
+    | {f"COM{index}" for index in range(1, 10)}
+    | {f"LPT{index}" for index in range(1, 10)}
+)
+
+
 def safe_relative_path(value: str) -> PurePosixPath:
     if not value or "\\" in value:
         raise EvidenceError("unsafe_path", f"unsafe path: {value!r}")
     path = PurePosixPath(value)
-    if (
-        path.is_absolute()
-        or (len(value) >= 2 and value[1] == ":")
-        or path.as_posix() != value
-        or any(part in {"", ".", ".."} for part in path.parts)
-    ):
+    unsafe_component = any(
+        part in {"", ".", ".."}
+        or ":" in part
+        or part.endswith((".", " "))
+        or any(ord(character) < 32 or ord(character) == 127 for character in part)
+        or part.split(".", 1)[0].upper() in _DOS_RESERVED_BASENAMES
+        for part in path.parts
+    )
+    if path.is_absolute() or path.as_posix() != value or unsafe_component:
         raise EvidenceError("unsafe_path", f"unsafe path: {value!r}")
     return path
 
 
+def is_link_like(path: Path) -> bool:
+    """Return true for symlinks, junctions, and other Windows reparse points."""
+    if path.is_symlink():
+        return True
+    is_junction = getattr(path, "is_junction", None)
+    if is_junction is not None and is_junction():
+        return True
+    if os.name == "nt":
+        try:
+            attributes = cast(Any, path.lstat()).st_file_attributes
+        except (FileNotFoundError, AttributeError):
+            return False
+        return bool(attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT)
+    return False
+
+
 def ensure_no_symlink(root: Path, relative: PurePosixPath) -> Path:
-    if root.is_symlink():
-        raise EvidenceError("symlink_forbidden", f"root path is a symlink: {root}")
+    if is_link_like(root):
+        raise EvidenceError("symlink_forbidden", f"root path is link-like: {root}")
     current = root
     for part in relative.parts:
         current = current / part
-        if current.is_symlink():
-            raise EvidenceError("symlink_forbidden", f"symlink forbidden: {relative}")
+        if is_link_like(current):
+            raise EvidenceError("symlink_forbidden", f"link-like path forbidden: {relative}")
     return current

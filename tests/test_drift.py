@@ -106,7 +106,15 @@ def test_invalid_nested_regions_are_refused() -> None:
     masks[2, 0, 0, 0] = True
     with pytest.raises(EvidenceError) as caught:
         validate_nested_masks(masks)
-    assert caught.value.code == "invalid_nested_regions"
+    assert caught.value.code == "et_not_subset_tc"
+
+
+def test_tc_outside_wt_has_specific_refusal_code() -> None:
+    masks = np.zeros((3, 2, 2, 2), dtype=bool)
+    masks[0, 0, 0, 0] = True
+    with pytest.raises(EvidenceError) as caught:
+        validate_nested_masks(masks)
+    assert caught.value.code == "tc_not_subset_wt"
 
 
 def test_report_serializes_null_acceptance_thresholds() -> None:

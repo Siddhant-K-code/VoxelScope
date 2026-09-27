@@ -14,6 +14,7 @@ from .canonical import (
     EvidenceError,
     canonical_json_bytes,
     ensure_no_symlink,
+    is_link_like,
     load_json,
     safe_relative_path,
     sha256_file,
@@ -23,6 +24,7 @@ from .drift import compare, component_summary, threshold_masks, validate_nested_
 from .records import (
     REGIONS,
     STAGES,
+    ArrayArtifact,
     BundleArtifact,
     BundleIndex,
     FailureState,
@@ -72,21 +74,26 @@ def _media_type(path: Path) -> str:
 
 
 def _scan_tree(root: Path) -> tuple[dict[str, Path], set[str]]:
+    if is_link_like(root):
+        raise EvidenceError("symlink_forbidden", str(root))
     files: dict[str, Path] = {}
     directories: set[str] = set()
     stack: list[tuple[Path, str]] = [(root, "")]
     while stack:
         directory, prefix = stack.pop()
+        if is_link_like(directory):
+            raise EvidenceError("symlink_forbidden", prefix or str(root))
         with os.scandir(directory) as entries:
             for entry in entries:
                 relative = f"{prefix}/{entry.name}" if prefix else entry.name
-                if entry.is_symlink():
+                entry_path = Path(entry.path)
+                if entry.is_symlink() or is_link_like(entry_path):
                     raise EvidenceError("symlink_forbidden", relative)
                 if entry.is_dir(follow_symlinks=False):
                     directories.add(relative)
-                    stack.append((Path(entry.path), relative))
+                    stack.append((entry_path, relative))
                 elif entry.is_file(follow_symlinks=False):
-                    files[relative] = Path(entry.path)
+                    files[relative] = entry_path
                 else:
                     raise EvidenceError("special_file_forbidden", relative)
     return files, directories
@@ -112,6 +119,32 @@ def finalize_bundle(root: Path) -> str:
 
 def _parse_index(data: dict[str, Any]) -> BundleIndex:
     return BundleIndex.from_dict(data)
+
+
+def _require_indexed_reference(
+    root: Path,
+    indexed_paths: set[str],
+    reference: str,
+    *,
+    parent: str = "",
+) -> Path:
+    relative = safe_relative_path(reference)
+    lexical = safe_relative_path(
+        f"{parent}/{relative.as_posix()}" if parent else relative.as_posix()
+    )
+    if lexical.as_posix() not in indexed_paths:
+        raise EvidenceError("unindexed_reference", lexical.as_posix())
+    return ensure_no_symlink(root, lexical)
+
+
+def _require_indexed_array_references(
+    root: Path,
+    indexed_paths: set[str],
+    parent: str,
+    artifacts: list[Any],
+) -> None:
+    for artifact in artifacts:
+        _require_indexed_reference(root, indexed_paths, artifact.path, parent=parent)
 
 
 def load_output(path: Path) -> tuple[OutputIdentity, np.ndarray[Any, Any]]:
@@ -146,11 +179,11 @@ def _load_volume(
 
 
 def verify_bundle(root: Path) -> str:
-    if not root.is_dir() or root.is_symlink():
+    if is_link_like(root) or not root.is_dir():
         raise EvidenceError("missing_bundle", str(root))
     digest_file = root / "bundle.sha256"
     index_file = root / "bundle.json"
-    if digest_file.is_symlink() or index_file.is_symlink():
+    if is_link_like(digest_file) or is_link_like(index_file):
         raise EvidenceError("symlink_forbidden", "bundle root files cannot be symlinks")
     if not digest_file.is_file() or not index_file.is_file():
         raise EvidenceError("missing_bundle_index", str(root))
@@ -232,7 +265,15 @@ def verify_bundle(root: Path) -> str:
         raise EvidenceError("synthetic_manifest_scope_mismatch", "PR 1 scope was escalated")
     if (root / "SUMMARY.txt").read_bytes() != SYNTHETIC_SUMMARY_BYTES:
         raise EvidenceError("synthetic_summary_mismatch", "summary text differs")
-    volume_path = ensure_no_symlink(root, safe_relative_path(manifest.volume_identity_path))
+    volume_path = _require_indexed_reference(root, indexed_paths, manifest.volume_identity_path)
+    volume_data = load_json(volume_path)
+    volume_identity = VolumeIdentity.from_dict(require_object(volume_data, "VolumeIdentity"))
+    _require_indexed_array_references(
+        root,
+        indexed_paths,
+        "",
+        [volume_identity.affine, *volume_identity.modalities.values()],
+    )
     volume, modalities, affine = _load_volume(volume_path)
     if (
         volume.volume_id != SYNTHETIC_VOLUME_ID
@@ -244,7 +285,7 @@ def verify_bundle(root: Path) -> str:
     ):
         raise EvidenceError("synthetic_volume_mismatch", "volume differs from trusted fixture")
 
-    model_path = ensure_no_symlink(root, safe_relative_path(manifest.model_identity_path))
+    model_path = _require_indexed_reference(root, indexed_paths, manifest.model_identity_path)
     model_data = load_json(model_path)
     if not isinstance(model_data, dict):
         raise EvidenceError("invalid_model_identity", "model identity must be an object")
@@ -260,7 +301,7 @@ def verify_bundle(root: Path) -> str:
         or model.weights_sha256 is not None
     ):
         raise EvidenceError("synthetic_model_identity_mismatch", "model identity differs")
-    config_path = ensure_no_symlink(root, safe_relative_path(model.config_path))
+    config_path = _require_indexed_reference(root, indexed_paths, model.config_path)
     if (
         not config_path.is_file()
         or model.config_sha256 != SYNTHETIC_MODEL_CONFIG_SHA256
@@ -271,11 +312,12 @@ def verify_bundle(root: Path) -> str:
     if canonical_json_bytes(model_config) != canonical_json_bytes(SYNTHETIC_MODEL_CONFIG):
         raise EvidenceError("synthetic_model_config_mismatch", "model config semantics differ")
     if model.weights_path is not None:
-        weights_path = ensure_no_symlink(root, safe_relative_path(model.weights_path))
+        weights_path = _require_indexed_reference(root, indexed_paths, model.weights_path)
         if not weights_path.is_file() or model.weights_sha256 != sha256_file(weights_path):
             raise EvidenceError("model_weights_hash_mismatch", "model weights differ")
 
-    ledger_data = load_json(root / "windows" / "window-ledger.json")
+    ledger_path = _require_indexed_reference(root, indexed_paths, "windows/window-ledger.json")
+    ledger_data = load_json(ledger_path)
     if not isinstance(ledger_data, dict):
         raise EvidenceError("invalid_window_ledger", "ledger must be an object")
     expected_evidence, expected_weights = build_window_evidence(modalities, manifest.window_config)
@@ -284,20 +326,30 @@ def verify_bundle(root: Path) -> str:
         expected_evidence.to_dict()
     ) or not isinstance(weight_artifact, dict):
         raise EvidenceError("window_ledger_mismatch", "ledger differs from deterministic rebuild")
-    stored_weights = read_array(root / "windows", weight_artifact)
+    weight_identity = ArrayArtifact.from_dict(weight_artifact)
+    _require_indexed_array_references(root, indexed_paths, "windows", [weight_identity])
+    stored_weights = read_array(root / "windows", weight_identity)
     if not np.array_equal(stored_weights, expected_weights):
         raise EvidenceError("weight_map_mismatch", "weight map differs")
 
     provenance_hashes = {
         "volume_identity_sha256": sha256_file(volume_path),
         "model_identity_sha256": sha256_file(model_path),
-        "window_ledger_sha256": sha256_file(root / "windows" / "window-ledger.json"),
+        "window_ledger_sha256": sha256_file(ledger_path),
     }
     trusted_outputs = synthetic_outputs()
     output_paths = sorted(root.glob("outputs/*/output.json"))
     outputs_by_id: dict[str, tuple[str, OutputIdentity, np.ndarray[Any, Any]]] = {}
     for output_path in output_paths:
-        identity, probabilities = load_output(output_path)
+        output_data = load_json(output_path)
+        identity = OutputIdentity.from_dict(require_object(output_data, "OutputIdentity"))
+        _require_indexed_array_references(
+            root,
+            indexed_paths,
+            f"outputs/{output_path.parent.name}",
+            [identity.probabilities, *identity.masks.values()],
+        )
+        _, probabilities = load_output(output_path)
         if output_path.parent.name != identity.output_id:
             raise EvidenceError("output_path_id_mismatch", output_path.as_posix())
         if identity.output_id in outputs_by_id:
@@ -416,7 +468,7 @@ def verify_bundle(root: Path) -> str:
             or refusal.evidence_path != expected_refusal.evidence_path
         ):
             raise EvidenceError("refusal_contract_mismatch", refusal_path.name)
-        evidence_path = ensure_no_symlink(root, safe_relative_path(refusal.evidence_path))
+        evidence_path = _require_indexed_reference(root, indexed_paths, refusal.evidence_path)
         evidence_digest = sha256_file(evidence_path)
         if (
             not evidence_path.is_file()
@@ -430,8 +482,18 @@ def verify_bundle(root: Path) -> str:
                 evidence = InvalidOutputEvidence.from_dict(
                     require_object(evidence_data, "invalid nesting evidence")
                 )
+                _require_indexed_array_references(
+                    root, indexed_paths, "refusals", [evidence.probabilities]
+                )
                 probabilities = read_array(evidence_path.parent, evidence.probabilities)
-                validate_nested_masks(threshold_masks(probabilities, evidence.threshold))
+                masks = threshold_masks(probabilities, evidence.threshold)
+                tc, wt, et = masks
+                if not bool(np.any(et & ~tc)) or bool(np.any(tc & ~wt)):
+                    raise EvidenceError(
+                        "invalid_refusal_evidence",
+                        "trusted evidence must violate only ET subset TC",
+                    )
+                validate_nested_masks(masks)
             elif refusal_id == "invalid-padding":
                 request_data = load_json(evidence_path)
                 WindowConfig.from_dict(require_object(request_data, "invalid padding request"))
@@ -455,10 +517,12 @@ def verify_bundle(root: Path) -> str:
         or receipt.failure_path is not None
     ):
         raise EvidenceError("invalid_receipt", "synthetic fixture receipt differs")
-    timing_path = ensure_no_symlink(root, safe_relative_path(receipt.timings_path))
-    if not timing_path.is_file() or timing_path != root / "stage-timings.json":
+    if receipt.timings_path != "stage-timings.json":
+        raise EvidenceError("invalid_receipt", "timing path spelling differs")
+    timing_path = _require_indexed_reference(root, indexed_paths, receipt.timings_path)
+    if not timing_path.is_file():
         raise EvidenceError("invalid_receipt", "timing path does not resolve exactly")
-    provenance_path = root / "timing-provenance.json"
+    provenance_path = _require_indexed_reference(root, indexed_paths, "timing-provenance.json")
     provenance_data = load_json(provenance_path)
     if canonical_json_bytes(provenance_data) != canonical_json_bytes(SYNTHETIC_TIMING_PROVENANCE):
         raise EvidenceError("timing_provenance_mismatch", "timing provenance differs")
