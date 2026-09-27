@@ -7,9 +7,9 @@ from .canonical import EvidenceError, canonical_json_bytes, sha256_bytes
 from .one_volume_records import OneVolumeAcquisitionPlan, OneVolumeDecision
 
 DECISION_ID = "voxelscope-one-volume-source-decision-v1"
-DECISION_SHA256 = "d5e69bd1fb57be4c5f8d5b674c8eb04dcd91d4ab62627da5b566ccf9c76ff065"
+DECISION_SHA256 = "cde9a898e5eaeb8a634427081320deb7b8feea73175d20e2f7643f2080990d30"
 PLAN_ID = "voxelscope-openneuro-one-volume-acquisition-v1"
-PLAN_SHA256 = "ec14dfbccea6638606c681cac412dfa2be8c980390280798e59f4e849fff237c"
+PLAN_SHA256 = "94e2876d1ee5a3e2fbed2b6a6b87bd46205b2b8e6f81e88d98fd7d1d1c80093c"
 MODEL_BUNDLE_ID = "monai-brats-mri-segmentation-ngc-v0.5.2"
 SELECTED_CANDIDATE_ID = "openneuro-ds007045-v2.0.1"
 EXPECTED_CANDIDATES = frozenset(

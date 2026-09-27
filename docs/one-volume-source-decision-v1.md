@@ -19,6 +19,12 @@ The canonical records are:
 
 The acquisition plan is network-disabled and explicitly blocked. It has no CLI acquisition command. No medical data were downloaded.
 
+## Outcome-blind case selection
+
+The selected case is the lexicographically first root subject directory in snapshot `ds007045:2.0.1` that has all four N4-only modalities and an aligned mask. Selection uses only OpenNeuro snapshot tree filenames, annex flags, sizes, and content identities. It does not inspect medical bytes, mask values, lesion properties, or model outputs.
+
+The official snapshot API reports 363 root subject directories. All 363 have the required N4-only four-modality and aligned-mask set under the path rules pinned by this record. Lexical order begins with the selected public BIDS locator, followed by the other two locators from the same source site. This establishes the selected case without outcome-based choice.
+
 ## Search and verification method
 
 Independent searches were run through both Exa.ai and Parallel.ai. Direct source verification covered Project MONAI, TCIA and NBIA, BraTS and CBICA, FeTS, Synapse, Zenodo, OpenNeuro, and the peer-reviewed dataset publication.
@@ -118,3 +124,5 @@ Source identity, license, direct access, and image-label pairing are GO. Acquisi
 No medical data were downloaded, ranged from an archive, extracted, or inspected. No model was loaded. No inference, GPU use, cloud provisioning, or paid service occurred.
 
 The canonical records contain the selected dataset's public deidentified BIDS locator because it is required to bind the four images and mask. They contain no participant crosswalk, direct identity, clinical metadata, private path, credential, or signed URL.
+
+The active execution boundary is [`one-volume-feasibility-protocol-v2.md`](one-volume-feasibility-protocol-v2.md). Protocol v1 remains an unexecuted historical Task01 plan.

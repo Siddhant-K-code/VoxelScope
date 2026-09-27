@@ -6,6 +6,8 @@ This is a prospective, zero-inference protocol. It does not authorize execution.
 
 The protocol is research infrastructure only. It does not assess diagnosis, treatment, clinical safety, radiologist equivalence, patient-specific validity, or diagnostic accuracy. No clinical meaning may be inferred from a model name, channel, label, or mask.
 
+This protocol was never executed and is superseded by [`one-volume-feasibility-protocol-v2.md`](one-volume-feasibility-protocol-v2.md). Its Task01 scope is retained as a historical decision record.
+
 ## Preconditions
 
 Execution remains prohibited until every gate in [`real-data-readiness-v1.md`](real-data-readiness-v1.md) has an approved GO record. Required approvals include:
@@ -19,8 +21,6 @@ Execution remains prohibited until every gate in [`real-data-readiness-v1.md`](r
 7. An explicit operator start action. There is no automatic retry.
 
 The label is retained for custody identity only. It must not be used to compute diagnostic accuracy unless exact subject non-overlap is proved prospectively.
-
-Milestone 3 identifies an OpenNeuro source path, but its acquisition plan remains blocked. Source-path GO does not satisfy any execution precondition in this protocol.
 
 ## Fixed study scope
 

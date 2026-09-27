@@ -6,6 +6,8 @@ This protocol governs the first future one-volume feasibility study for VoxelSco
 
 PR 1 executes only independent synthetic unit tests. It does not execute the one-volume study.
 
+Milestone 3 supersedes the Task01 source preference in this historical preregistration with the selected OpenNeuro path. It does not authorize acquisition or execution. The active source-specific protocol is [`one-volume-feasibility-protocol-v2.md`](one-volume-feasibility-protocol-v2.md).
+
 ## Study boundaries
 
 ### Independent unit boundary

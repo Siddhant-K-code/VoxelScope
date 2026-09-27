@@ -56,6 +56,18 @@ _SOURCE_GO_GATES = (
     "metadata_lineage",
     "license",
 )
+_SOURCE_LABEL_SEMANTICS = (
+    (0, "background or non-tumor tissue"),
+    (1, "necrotic core"),
+    (2, "non-enhancing or edematous tumor"),
+    (3, "contrast-enhancing tumor"),
+)
+_MODEL_OUTPUT_LABEL_SEMANTICS = (
+    (0, "background"),
+    (1, "tumor core excluding enhancing tumor after priority encoding"),
+    (2, "whole tumor excluding tumor core after priority encoding"),
+    (4, "enhancing tumor"),
+)
 
 
 def _strings(value: Any, name: str) -> tuple[str, ...]:
@@ -340,14 +352,27 @@ class ModelCompatibilityContract:
     required_source_preprocessing: tuple[str, ...]
     inference_normalization: str
     source_label_semantics: tuple[LabelSemantic, ...]
+    model_output_label_semantics: tuple[LabelSemantic, ...]
     output_region_order: tuple[str, ...]
     allowed_measurement_scope: Literal["output-preservation-only"]
 
     def __post_init__(self) -> None:
         if self.input_channel_order != ("T1c", "T1", "T2", "FLAIR"):
             raise EvidenceError("unsafe_channel_order", repr(self.input_channel_order))
-        if tuple(item.value for item in self.source_label_semantics) != (0, 1, 2, 4):
-            raise EvidenceError("unsafe_label_semantics", "expected labels 0, 1, 2, and 4")
+        source_semantics = tuple((item.value, item.meaning) for item in self.source_label_semantics)
+        if source_semantics != _SOURCE_LABEL_SEMANTICS:
+            raise EvidenceError(
+                "unsafe_source_label_semantics",
+                "expected exact ds007045 labels 0, 1, 2, and 3",
+            )
+        model_semantics = tuple(
+            (item.value, item.meaning) for item in self.model_output_label_semantics
+        )
+        if model_semantics != _MODEL_OUTPUT_LABEL_SEMANTICS:
+            raise EvidenceError(
+                "unsafe_model_output_label_semantics",
+                "expected exact MONAI output labels 0, 1, 2, and 4",
+            )
         if self.output_region_order != ("TC", "WT", "ET"):
             raise EvidenceError("unsafe_output_order", repr(self.output_region_order))
         if self.allowed_measurement_scope != "output-preservation-only":
@@ -362,6 +387,7 @@ class ModelCompatibilityContract:
                 "bundle_id",
                 "inference_normalization",
                 "input_channel_order",
+                "model_output_label_semantics",
                 "output_region_order",
                 "required_source_preprocessing",
                 "source_label_semantics",
@@ -380,6 +406,13 @@ class ModelCompatibilityContract:
                 LabelSemantic.from_dict(require_object(item, "label semantic"))
                 for item in require_list(data["source_label_semantics"], "source_label_semantics")
             ),
+            tuple(
+                LabelSemantic.from_dict(require_object(item, "model output label semantic"))
+                for item in require_list(
+                    data["model_output_label_semantics"],
+                    "model_output_label_semantics",
+                )
+            ),
             _strings(data["output_region_order"], "output_region_order"),
             "output-preservation-only",
         )
@@ -393,6 +426,7 @@ class OneVolumeDecision:
     decision: CandidateDisposition
     inference_status: Literal["no-go"]
     selected_candidate_id: str | None
+    selection_rule: str | None
     network_default: Literal["disabled"]
     medical_data_acquired: Literal[False]
     model_contract: ModelCompatibilityContract
@@ -429,8 +463,14 @@ class OneVolumeDecision:
                 or self.selected_candidate_id != go_candidates[0].candidate_id
             ):
                 raise EvidenceError("unsafe_decision_go", self.decision_id)
+            if self.selection_rule is None:
+                raise EvidenceError("missing_selection_rule", self.decision_id)
         elif self.decision == "no-go":
-            if self.selected_candidate_id is not None or go_candidates:
+            if (
+                self.selected_candidate_id is not None
+                or self.selection_rule is not None
+                or go_candidates
+            ):
                 raise EvidenceError("unsafe_decision_no_go", self.decision_id)
         else:
             raise EvidenceError("invalid_decision", self.decision)
@@ -454,6 +494,7 @@ class OneVolumeDecision:
                 "schema_version",
                 "search_evidence",
                 "selected_candidate_id",
+                "selection_rule",
             },
             "OneVolumeDecision",
         )
@@ -469,6 +510,12 @@ class OneVolumeDecision:
             if selected_value is not None
             else None
         )
+        selection_value = data["selection_rule"]
+        selection_rule = (
+            require_string(selection_value, "selection_rule")
+            if selection_value is not None
+            else None
+        )
         network_default = require_string(data["network_default"], "network_default")
         if network_default != "disabled":
             raise EvidenceError("unsafe_network_default", network_default)
@@ -482,6 +529,7 @@ class OneVolumeDecision:
             cast(CandidateDisposition, decision),
             cast(Literal["no-go"], require_string(data["inference_status"], "inference_status")),
             selected,
+            selection_rule,
             "disabled",
             False,
             ModelCompatibilityContract.from_dict(
@@ -586,6 +634,7 @@ class OneVolumeAcquisitionPlan:
     network_default: Literal["disabled"]
     execution_status: PlanExecutionStatus
     blocked_reason: str
+    post_acquisition_gates: tuple[str, ...]
     artifacts: tuple[PlannedArtifact, ...]
 
     def __post_init__(self) -> None:
@@ -593,7 +642,11 @@ class OneVolumeAcquisitionPlan:
             raise EvidenceError("unsupported_schema", self.schema_version)
         if self.network_default != "disabled":
             raise EvidenceError("unsafe_network_default", self.network_default)
-        if self.execution_status != "blocked" or not self.blocked_reason:
+        if (
+            self.execution_status != "blocked"
+            or not self.blocked_reason
+            or not self.post_acquisition_gates
+        ):
             raise EvidenceError("unsafe_plan_status", self.plan_id)
         identifiers = [artifact.artifact_id for artifact in self.artifacts]
         destinations = [artifact.destination for artifact in self.artifacts]
@@ -617,6 +670,7 @@ class OneVolumeAcquisitionPlan:
                 "execution_status",
                 "network_default",
                 "plan_id",
+                "post_acquisition_gates",
                 "schema_version",
             },
             "OneVolumeAcquisitionPlan",
@@ -638,6 +692,7 @@ class OneVolumeAcquisitionPlan:
             "disabled",
             "blocked",
             require_string(data["blocked_reason"], "blocked_reason"),
+            _strings(data["post_acquisition_gates"], "post_acquisition_gates"),
             tuple(
                 PlannedArtifact.from_dict(require_object(item, "planned artifact"))
                 for item in require_list(data["artifacts"], "artifacts")

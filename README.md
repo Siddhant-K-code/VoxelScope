@@ -106,12 +106,13 @@ VoxelScope does not currently claim that:
 
 - Any accelerated backend preserves a real medical segmentation.
 - Any output is diagnostically accurate.
-- Any model or dataset identity has been approved or acquired.
+- The selected OpenNeuro medical artifacts have been acquired or approved for inference.
+- Any model, dataset, or output has clinical approval.
 - Any real subject is independent from model training data.
 - Any numerical drift threshold is clinically acceptable.
 - Any backend is safe for clinical or patient-specific use.
 
-See [the real-data readiness record](docs/real-data-readiness-v1.md), [one-volume feasibility protocol](docs/one-volume-feasibility-protocol-v1.md), and [private custody workflow](docs/private-custody-workflow-v1.md) before proposing real-data work.
+See [the real-data readiness record](docs/real-data-readiness-v1.md), [active one-volume feasibility protocol](docs/one-volume-feasibility-protocol-v2.md), [historical protocol v1](docs/one-volume-feasibility-protocol-v1.md), and [private custody workflow](docs/private-custody-workflow-v1.md) before proposing real-data work.
 
 ## Next gate
 

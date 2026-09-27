@@ -26,6 +26,9 @@ def test_one_volume_decision_is_canonical_trusted_source_go() -> None:
     assert decision.decision == "go"
     assert decision.inference_status == "no-go"
     assert decision.selected_candidate_id == SELECTED_CANDIDATE_ID
+    assert decision.selection_rule is not None
+    assert "lexicographically first" in decision.selection_rule
+    assert "without inspecting medical bytes" in decision.selection_rule
     assert decision.medical_data_acquired is False
     assert {candidate.candidate_id for candidate in decision.candidates} == EXPECTED_CANDIDATES
     assert [
@@ -47,6 +50,8 @@ def test_one_volume_plan_is_canonical_blocked_and_ordered() -> None:
         "image-flair",
     ]
     assert all(artifact.operator_approval_required for artifact in plan.artifacts[:5])
+    assert len(plan.post_acquisition_gates) == 4
+    assert "Do not apply source value 3 to model-output value 4" in plan.post_acquisition_gates[2]
     assert PLAN.read_bytes() == canonical_json_bytes(plan)
     assert digest == hashlib.sha256(PLAN.read_bytes()).hexdigest()
 
@@ -56,6 +61,39 @@ def test_one_volume_decision_records_both_search_providers() -> None:
     assert {item.provider for item in decision.search_evidence} == {"exa.ai", "parallel.ai"}
     assert all(item.independent_query_count >= 2 for item in decision.search_evidence)
     assert all(item.verified_urls for item in decision.search_evidence)
+
+
+def test_source_and_model_label_semantics_are_distinct_and_pinned() -> None:
+    contract = load_one_volume_decision(DECISION).model_contract
+    assert [item.value for item in contract.source_label_semantics] == [0, 1, 2, 3]
+    assert [item.value for item in contract.model_output_label_semantics] == [0, 1, 2, 4]
+    assert contract.source_label_semantics[2].meaning == "non-enhancing or edematous tumor"
+    assert (
+        contract.model_output_label_semantics[2].meaning
+        == "whole tumor excluding tumor core after priority encoding"
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "expected_code"),
+    [
+        ("source_label_semantics", "unsafe_source_label_semantics"),
+        ("model_output_label_semantics", "unsafe_model_output_label_semantics"),
+    ],
+)
+@pytest.mark.parametrize("mutation", ["missing", "swapped"])
+def test_label_semantics_reject_missing_or_swapped_values(
+    field: str, expected_code: str, mutation: str
+) -> None:
+    data = load_json(DECISION)
+    semantics = data["model_contract"][field]
+    if mutation == "missing":
+        data["model_contract"][field] = semantics[:-1]
+    else:
+        semantics[1], semantics[2] = semantics[2], semantics[1]
+    with pytest.raises(EvidenceError) as caught:
+        OneVolumeDecision.from_dict(data)
+    assert caught.value.code == expected_code
 
 
 def test_one_volume_decision_go_requires_exact_artifact_set() -> None:
@@ -85,6 +123,14 @@ def test_one_volume_decision_requires_remaining_inference_blockers() -> None:
     assert caught.value.code == "incomplete_decision"
 
 
+def test_one_volume_go_requires_outcome_blind_selection_rule() -> None:
+    data = load_json(DECISION)
+    data["selection_rule"] = None
+    with pytest.raises(EvidenceError) as caught:
+        OneVolumeDecision.from_dict(data)
+    assert caught.value.code == "missing_selection_rule"
+
+
 def test_one_volume_decision_rejects_missing_search_provider() -> None:
     data = load_json(DECISION)
     data["search_evidence"] = data["search_evidence"][:1]
@@ -95,7 +141,7 @@ def test_one_volume_decision_rejects_missing_search_provider() -> None:
 
 def test_one_volume_trusted_contract_rejects_tampering(tmp_path: Path) -> None:
     data = load_json(DECISION)
-    data["next_gate"] = "tampered"
+    data["selection_rule"] = "post hoc selection"
     path = tmp_path / "decision.json"
     write_json(path, data)
     with pytest.raises(EvidenceError) as caught:
@@ -125,6 +171,14 @@ def test_one_volume_plan_rejects_medical_data_misclassification() -> None:
     with pytest.raises(EvidenceError) as caught:
         OneVolumeAcquisitionPlan.from_dict(data)
     assert caught.value.code == "invalid_medical_data_classification"
+
+
+def test_one_volume_plan_requires_post_acquisition_gates() -> None:
+    data = load_json(PLAN)
+    data["post_acquisition_gates"] = []
+    with pytest.raises(EvidenceError) as caught:
+        OneVolumeAcquisitionPlan.from_dict(data)
+    assert caught.value.code == "unsafe_plan_status"
 
 
 def test_one_volume_go_requires_sha256_for_every_artifact() -> None:
@@ -186,3 +240,25 @@ def test_one_volume_contract_uses_lf_only(path: Path) -> None:
     data = path.read_bytes()
     assert b"\r" not in data
     assert data.endswith(b"\n")
+
+
+def test_current_docs_use_protocol_v2_and_preserve_v1_history() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    protocol_v1 = (ROOT / "docs" / "one-volume-feasibility-protocol-v1.md").read_text(
+        encoding="utf-8"
+    )
+    protocol_v2 = (ROOT / "docs" / "one-volume-feasibility-protocol-v2.md").read_text(
+        encoding="utf-8"
+    )
+    runbook = (ROOT / "docs" / "future-execution-runbook.md").read_text(encoding="utf-8")
+    assert (
+        "active one-volume feasibility protocol](docs/one-volume-feasibility-protocol-v2.md)"
+        in readme
+    )
+    assert "never executed" in protocol_v1
+    assert "exactly one privately held Task01 training volume" in protocol_v1
+    assert "active prospective, zero-inference protocol" in protocol_v2
+    assert "selected OpenNeuro `ds007045` v2.0.1 case" in protocol_v2
+    assert "repository-assigned deidentified BIDS locator" in protocol_v2
+    assert "Publish no participant crosswalk, direct identity, clinical metadata" in protocol_v2
+    assert "OpenNeuro `ds007045` v2.0.1 source identity and one-volume selection are GO" in runbook
