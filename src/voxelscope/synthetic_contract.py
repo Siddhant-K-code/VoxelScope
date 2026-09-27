@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Literal
 
@@ -18,6 +19,15 @@ SYNTHETIC_STUDY_ID = "synthetic-feasibility-v0"
 SYNTHETIC_VOLUME_ID = "synthetic-volume-v1"
 SYNTHETIC_SHAPE = (7, 8, 9)
 SYNTHETIC_SPACING_MM = (1.0, 1.5, 2.0)
+SYNTHETIC_SURFACE_DICE_TOLERANCE_MM = 1.0
+SYNTHETIC_SUMMARY_BYTES = (
+    b"VoxelScope synthetic evidence bundle\n"
+    b"Research use only. No medical data, model weights, GPU, or network were used.\n"
+    b"Claim scope: output preservation only. Diagnostic accuracy is not claimed.\n"
+    b"Scenarios: identical, boundary shift, ET loss, false positive, "
+    b"probability-only, empty surface.\n"
+    b"Root digest: see bundle.sha256.\n"
+)
 SYNTHETIC_MODEL_CONFIG_SHA256 = "3a4829cb2733bc6f0811f441231073b2589243b6ad61ce3fdf4b04a14413d97d"
 SYNTHETIC_MODEL_CONFIG: Mapping[str, Any] = MappingProxyType(
     {
@@ -53,6 +63,7 @@ class SyntheticRefusalContract:
     code: str
     status: Literal["refused"]
     stage: str
+    message: str
     evidence_path: str
 
 
@@ -62,6 +73,7 @@ SYNTHETIC_REFUSALS = (
         "invalid_nested_regions",
         "refused",
         "postprocess",
+        "ET is not a subset of TC",
         "refusals/invalid-nesting-evidence.json",
     ),
     SyntheticRefusalContract(
@@ -69,6 +81,7 @@ SYNTHETIC_REFUSALS = (
         "unsupported_padding",
         "refused",
         "window_enumeration",
+        "Only explicit high-side zero padding is supported",
         "refusals/invalid-padding-request.json",
     ),
 )
@@ -185,3 +198,9 @@ def required_artifact_paths() -> frozenset[str]:
 
 
 SYNTHETIC_REQUIRED_ARTIFACT_PATHS = required_artifact_paths()
+SYNTHETIC_REQUIRED_DIRECTORIES = frozenset(
+    parent.as_posix()
+    for path in SYNTHETIC_REQUIRED_ARTIFACT_PATHS
+    for parent in Path(path).parents
+    if parent.as_posix() != "."
+)

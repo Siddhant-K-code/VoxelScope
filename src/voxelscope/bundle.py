@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +35,6 @@ from .records import (
     VolumeIdentity,
     WindowConfig,
     require_list,
-    require_number,
     require_object,
     require_string,
     strict_fields,
@@ -47,9 +47,12 @@ from .synthetic_contract import (
     SYNTHETIC_OUTPUT_IDS,
     SYNTHETIC_REFUSALS,
     SYNTHETIC_REQUIRED_ARTIFACT_PATHS,
+    SYNTHETIC_REQUIRED_DIRECTORIES,
     SYNTHETIC_RUN_ID,
     SYNTHETIC_SPACING_MM,
     SYNTHETIC_STUDY_ID,
+    SYNTHETIC_SUMMARY_BYTES,
+    SYNTHETIC_SURFACE_DICE_TOLERANCE_MM,
     SYNTHETIC_TIMING_PROVENANCE,
     SYNTHETIC_VOLUME_ID,
     synthetic_affine,
@@ -68,23 +71,37 @@ def _media_type(path: Path) -> str:
     return "application/octet-stream"
 
 
+def _scan_tree(root: Path) -> tuple[dict[str, Path], set[str]]:
+    files: dict[str, Path] = {}
+    directories: set[str] = set()
+    stack: list[tuple[Path, str]] = [(root, "")]
+    while stack:
+        directory, prefix = stack.pop()
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                relative = f"{prefix}/{entry.name}" if prefix else entry.name
+                if entry.is_symlink():
+                    raise EvidenceError("symlink_forbidden", relative)
+                if entry.is_dir(follow_symlinks=False):
+                    directories.add(relative)
+                    stack.append((Path(entry.path), relative))
+                elif entry.is_file(follow_symlinks=False):
+                    files[relative] = Path(entry.path)
+                else:
+                    raise EvidenceError("special_file_forbidden", relative)
+    return files, directories
+
+
 def finalize_bundle(root: Path) -> str:
-    payload = sorted(
-        (
-            path
-            for path in root.rglob("*")
-            if path.is_file() and path.name not in {"bundle.json", "bundle.sha256"}
-        ),
-        key=lambda path: path.relative_to(root).as_posix(),
-    )
+    files, _ = _scan_tree(root)
+    payload = [
+        (relative, path)
+        for relative, path in sorted(files.items())
+        if relative not in {"bundle.json", "bundle.sha256"}
+    ]
     artifacts = tuple(
-        BundleArtifact(
-            path.relative_to(root).as_posix(),
-            path.stat().st_size,
-            sha256_file(path),
-            _media_type(path),
-        )
-        for path in payload
+        BundleArtifact(relative, path.stat().st_size, sha256_file(path), _media_type(path))
+        for relative, path in payload
     )
     index = BundleIndex("voxelscope/v1", "voxelscope-closed-bundle-v1", artifacts)
     write_json(root / "bundle.json", index)
@@ -156,7 +173,14 @@ def verify_bundle(root: Path) -> str:
             f"extra={sorted(indexed_paths - set(SYNTHETIC_REQUIRED_ARTIFACT_PATHS))}",
         )
     expected_files = {"bundle.json", "bundle.sha256", *indexed_paths}
-    actual_files = {path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file()}
+    scanned_files, scanned_directories = _scan_tree(root)
+    actual_files = set(scanned_files)
+    if scanned_directories != set(SYNTHETIC_REQUIRED_DIRECTORIES):
+        raise EvidenceError(
+            "synthetic_directory_set_mismatch",
+            f"missing={sorted(set(SYNTHETIC_REQUIRED_DIRECTORIES) - scanned_directories)}, "
+            f"extra={sorted(scanned_directories - set(SYNTHETIC_REQUIRED_DIRECTORIES))}",
+        )
     if actual_files != expected_files:
         raise EvidenceError(
             "bundle_file_set_mismatch",
@@ -185,11 +209,11 @@ def verify_bundle(root: Path) -> str:
         for item in manifest.planned_comparisons
     )
     manifest_refusals = tuple(
-        (item.refusal_id, item.code, item.status, item.stage, item.evidence_path)
+        (item.refusal_id, item.code, item.status, item.stage, item.message, item.evidence_path)
         for item in manifest.expected_refusals
     )
     trusted_refusals = tuple(
-        (item.refusal_id, item.code, item.status, item.stage, item.evidence_path)
+        (item.refusal_id, item.code, item.status, item.stage, item.message, item.evidence_path)
         for item in SYNTHETIC_REFUSALS
     )
     if (
@@ -206,6 +230,8 @@ def verify_bundle(root: Path) -> str:
         or manifest.diagnostic_accuracy_allowed
     ):
         raise EvidenceError("synthetic_manifest_scope_mismatch", "PR 1 scope was escalated")
+    if (root / "SUMMARY.txt").read_bytes() != SYNTHETIC_SUMMARY_BYTES:
+        raise EvidenceError("synthetic_summary_mismatch", "summary text differs")
     volume_path = ensure_no_symlink(root, safe_relative_path(manifest.volume_identity_path))
     volume, modalities, affine = _load_volume(volume_path)
     if (
@@ -345,6 +371,8 @@ def verify_bundle(root: Path) -> str:
         candidate_hash, candidate_identity, candidate_probabilities = outputs_by_id[
             candidate_output_id
         ]
+        if report["surface_dice_tolerance_mm"] != SYNTHETIC_SURFACE_DICE_TOLERANCE_MM:
+            raise EvidenceError("surface_tolerance_mismatch", report_path.name)
         if (
             report["reference_output_sha256"] != reference_hash
             or report["candidate_output_sha256"] != candidate_hash
@@ -363,9 +391,7 @@ def verify_bundle(root: Path) -> str:
             candidate_output_sha256=candidate_hash,
             report_id=report_id,
             threshold=reference_identity.threshold,
-            surface_dice_tolerance_mm=require_number(
-                report["surface_dice_tolerance_mm"], "surface_dice_tolerance_mm"
-            ),
+            surface_dice_tolerance_mm=SYNTHETIC_SURFACE_DICE_TOLERANCE_MM,
         )
         if canonical_json_bytes(report) != canonical_json_bytes(expected_report):
             raise EvidenceError("drift_report_mismatch", report_path.name)
@@ -386,6 +412,7 @@ def verify_bundle(root: Path) -> str:
             or refusal.code != expected_refusal.code
             or refusal.status != expected_refusal.status
             or refusal.stage != expected_refusal.stage
+            or refusal.message != expected_refusal.message
             or refusal.evidence_path != expected_refusal.evidence_path
         ):
             raise EvidenceError("refusal_contract_mismatch", refusal_path.name)

@@ -13,7 +13,7 @@ from voxelscope.canonical import EvidenceError, load_json, sha256_file, write_js
 from voxelscope.cli import main
 from voxelscope.fixtures import build_fixture_bundle
 
-GOLDEN_BUNDLE_SHA256 = "35461bffb121a76a57ac140cbd2bc253553beb3261e25c5a3a8ca82f13291574"
+GOLDEN_BUNDLE_SHA256 = "d0c41694ef188cef5fba6d575b995b43da60d844dbeb17175b1a5d12f16b2122"
 
 
 def test_bundle_is_reproducible_and_matches_golden_hash(tmp_path: Path) -> None:
@@ -717,3 +717,120 @@ def test_refusal_contract_fields_are_exact_after_reseal(
     with pytest.raises(EvidenceError) as caught:
         verify_bundle(root)
     assert caught.value.code == "refusal_contract_mismatch"
+
+
+def test_huge_numeric_value_has_no_cli_traceback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    path = root / "outputs" / "identical" / "output.json"
+    output = load_json(path)
+    output["spacing_mm"][0] = 10**400
+    write_json(path, output)
+    finalize_bundle(root)
+    assert main(["verify", "--bundle", str(root)]) == 2
+    captured = capsys.readouterr()
+    assert "ERROR invalid_json_type" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_dangling_symlink_entry_is_refused(tmp_path: Path) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    link = root / "dangling"
+    try:
+        link.symlink_to(root / "does-not-exist")
+    except OSError:
+        pytest.skip("symlink creation unavailable")
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "symlink_forbidden"
+
+
+def test_directory_symlink_entry_is_refused(tmp_path: Path) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    link = root / "linked-directory"
+    try:
+        link.symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlink creation unavailable")
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "symlink_forbidden"
+
+
+def test_unplanned_empty_directory_is_refused(tmp_path: Path) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    (root / "extra-directory").mkdir()
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "synthetic_directory_set_mismatch"
+
+
+def test_surface_tolerance_is_trusted_after_report_recompute(tmp_path: Path) -> None:
+    from voxelscope.bundle import load_output
+    from voxelscope.drift import compare
+
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    reference_path = root / "outputs" / "reference" / "output.json"
+    candidate_path = root / "outputs" / "identical" / "output.json"
+    reference_identity, reference = load_output(reference_path)
+    _, candidate = load_output(candidate_path)
+    write_json(
+        root / "reports" / "identical.json",
+        compare(
+            reference,
+            candidate,
+            spacing_mm=reference_identity.spacing_mm,
+            reference_output_sha256=sha256_file(reference_path),
+            candidate_output_sha256=sha256_file(candidate_path),
+            report_id="identical",
+            surface_dice_tolerance_mm=2.0,
+        ),
+    )
+    finalize_bundle(root)
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "surface_tolerance_mismatch"
+
+
+def test_modified_summary_is_refused_after_reseal(tmp_path: Path) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    (root / "SUMMARY.txt").write_bytes(b"substituted summary\n")
+    finalize_bundle(root)
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "synthetic_summary_mismatch"
+
+
+def test_modified_refusal_message_is_refused_after_reseal(tmp_path: Path) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    path = root / "refusals" / "invalid-padding.json"
+    refusal = load_json(path)
+    refusal["message"] = "substituted message"
+    write_json(path, refusal)
+    finalize_bundle(root)
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "refusal_contract_mismatch"
+
+
+def test_non_regular_filesystem_entry_is_refused(tmp_path: Path) -> None:
+    import os
+
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("FIFO creation unavailable")
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    os.mkfifo(root / "unexpected-pipe")
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "special_file_forbidden"

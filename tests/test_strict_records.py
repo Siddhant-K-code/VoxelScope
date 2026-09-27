@@ -78,3 +78,11 @@ def test_array_artifact_rejects_windows_separator() -> None:
             }
         )
     assert caught.value.code == "unsafe_path"
+
+
+def test_huge_json_integer_becomes_evidence_error() -> None:
+    from voxelscope.records import require_number
+
+    with pytest.raises(EvidenceError) as caught:
+        require_number(10**400, "huge")
+    assert caught.value.code == "invalid_json_type"

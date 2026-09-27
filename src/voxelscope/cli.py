@@ -14,6 +14,7 @@ from pathlib import Path
 import numpy as np
 
 from .arrays import read_array, write_array
+from .atomic import link_file_no_replace, path_occupied, rename_no_replace
 from .bundle import load_output, verify_bundle
 from .canonical import (
     EvidenceError,
@@ -59,7 +60,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _windows_build(manifest_path: Path, output: Path) -> str:
-    if output.exists():
+    if path_occupied(output):
         raise EvidenceError("output_exists", str(output))
     if manifest_path.is_symlink() or not manifest_path.is_file():
         raise EvidenceError("unsafe_path", "manifest must be a regular file")
@@ -88,7 +89,7 @@ def _windows_build(manifest_path: Path, output: Path) -> str:
         ledger = evidence.to_dict()
         ledger["weight_artifact"] = weight_artifact
         write_json(temporary / "window-ledger.json", ledger)
-        os.replace(temporary, output)
+        rename_no_replace(temporary, output)
     finally:
         if temporary.exists():
             shutil.rmtree(temporary)
@@ -96,14 +97,24 @@ def _windows_build(manifest_path: Path, output: Path) -> str:
 
 
 def _drift_compare(reference_path: Path, candidate_path: Path, output: Path) -> str:
-    if output.exists():
+    if path_occupied(output):
         raise EvidenceError("output_exists", str(output))
     reference_identity, reference = load_output(reference_path)
     candidate_identity, candidate = load_output(candidate_path)
-    if reference_identity.threshold != candidate_identity.threshold:
-        raise EvidenceError("incompatible_threshold", "threshold policies differ")
+    if reference.shape != candidate.shape:
+        raise EvidenceError("incompatible_output_shape", "spatial shapes differ")
     if reference_identity.spacing_mm != candidate_identity.spacing_mm:
         raise EvidenceError("incompatible_spacing", "spacing differs")
+    if reference_identity.threshold != candidate_identity.threshold:
+        raise EvidenceError("incompatible_threshold", "threshold policies differ")
+    if reference_identity.volume_identity_sha256 != candidate_identity.volume_identity_sha256:
+        raise EvidenceError("incompatible_volume_identity", "volume identities differ")
+    if reference_identity.model_identity_sha256 != candidate_identity.model_identity_sha256:
+        raise EvidenceError("incompatible_model_identity", "model identities differ")
+    if reference_identity.window_ledger_sha256 != candidate_identity.window_ledger_sha256:
+        raise EvidenceError("incompatible_window_ledger", "window ledgers differ")
+    if reference_identity.run_id != candidate_identity.run_id:
+        raise EvidenceError("incompatible_run_identity", "run identities differ")
     report = compare(
         reference,
         candidate,
@@ -120,7 +131,7 @@ def _drift_compare(reference_path: Path, candidate_path: Path, output: Path) -> 
     try:
         write_json(temporary, report)
         report_sha256 = sha256_file(temporary)
-        os.replace(temporary, output)
+        link_file_no_replace(temporary, output)
     finally:
         temporary.unlink(missing_ok=True)
     return report_sha256
@@ -144,7 +155,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except EvidenceError as exc:
         print(f"ERROR {exc.code}: {exc}", file=sys.stderr)
         return 2
-    except (TypeError, KeyError, ValueError) as exc:
+    except (TypeError, KeyError, ValueError, ArithmeticError) as exc:
         print(f"ERROR malformed_evidence: {exc}", file=sys.stderr)
         return 2
     except OSError as exc:

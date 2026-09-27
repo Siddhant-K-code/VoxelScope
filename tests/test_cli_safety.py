@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 import voxelscope.cli as cli_module
-from voxelscope.canonical import load_json, write_json
+from voxelscope.canonical import EvidenceError, load_json, write_json
 from voxelscope.cli import main
 from voxelscope.fixtures import build_fixture_bundle
 
@@ -126,3 +126,255 @@ def test_drift_compare_interruption_leaves_no_output_or_temporary_file(
         )
     assert not output.exists()
     assert not list(tmp_path.glob(".report.json.tmp-*"))
+
+
+@pytest.mark.parametrize(
+    ("field", "expected_code"),
+    [
+        ("volume_identity_sha256", "incompatible_volume_identity"),
+        ("model_identity_sha256", "incompatible_model_identity"),
+        ("window_ledger_sha256", "incompatible_window_ledger"),
+        ("run_id", "incompatible_run_identity"),
+    ],
+)
+def test_drift_compare_rejects_incompatible_provenance(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], field: str, expected_code: str
+) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    candidate_path = root / "outputs" / "identical" / "output.json"
+    candidate = load_json(candidate_path)
+    candidate[field] = "f" * 64 if field.endswith("sha256") else "different-run"
+    write_json(candidate_path, candidate)
+    output = tmp_path / "report.json"
+    assert (
+        main(
+            [
+                "drift",
+                "compare",
+                "--reference",
+                str(root / "outputs" / "reference" / "output.json"),
+                "--candidate",
+                str(candidate_path),
+                "--output",
+                str(output),
+            ]
+        )
+        == 2
+    )
+    assert expected_code in capsys.readouterr().err
+    assert not output.exists()
+
+
+def test_drift_compare_allows_different_arm_identity(tmp_path: Path) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    candidate_path = root / "outputs" / "identical" / "output.json"
+    candidate = load_json(candidate_path)
+    candidate["arm_id"] = "candidate-arm"
+    write_json(candidate_path, candidate)
+    output = tmp_path / "report.json"
+    assert (
+        main(
+            [
+                "drift",
+                "compare",
+                "--reference",
+                str(root / "outputs" / "reference" / "output.json"),
+                "--candidate",
+                str(candidate_path),
+                "--output",
+                str(output),
+            ]
+        )
+        == 0
+    )
+    assert output.is_file()
+
+
+@pytest.mark.parametrize("command_kind", ["windows", "drift"])
+def test_cli_treats_dangling_destination_symlink_as_occupied(
+    tmp_path: Path, command_kind: str
+) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    output = tmp_path / ("windows" if command_kind == "windows" else "report.json")
+    try:
+        output.symlink_to(
+            tmp_path / "missing-target", target_is_directory=command_kind == "windows"
+        )
+    except OSError:
+        pytest.skip("symlink creation unavailable")
+    if command_kind == "windows":
+        arguments = [
+            "windows",
+            "build",
+            "--manifest",
+            str(root / "study-manifest.json"),
+            "--output",
+            str(output),
+        ]
+    else:
+        arguments = [
+            "drift",
+            "compare",
+            "--reference",
+            str(root / "outputs" / "reference" / "output.json"),
+            "--candidate",
+            str(root / "outputs" / "identical" / "output.json"),
+            "--output",
+            str(output),
+        ]
+    assert main(arguments) == 2
+    assert output.is_symlink()
+
+
+def test_windows_publish_race_does_not_replace_destination(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from voxelscope.atomic import rename_no_replace as real_publish
+
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    output = tmp_path / "windows"
+
+    def race(source: Path, destination: Path) -> None:
+        destination.mkdir()
+        real_publish(source, destination)
+
+    monkeypatch.setattr(cli_module, "rename_no_replace", race)
+    assert (
+        main(
+            [
+                "windows",
+                "build",
+                "--manifest",
+                str(root / "study-manifest.json"),
+                "--output",
+                str(output),
+            ]
+        )
+        == 2
+    )
+    assert output.is_dir()
+    assert not any(output.iterdir())
+    assert not list(tmp_path.glob(".windows.tmp-*"))
+
+
+def test_drift_publish_race_does_not_replace_destination(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from voxelscope.atomic import link_file_no_replace as real_publish
+
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    output = tmp_path / "report.json"
+
+    def race(source: Path, destination: Path) -> None:
+        destination.write_bytes(b"concurrent writer")
+        real_publish(source, destination)
+
+    monkeypatch.setattr(cli_module, "link_file_no_replace", race)
+    assert (
+        main(
+            [
+                "drift",
+                "compare",
+                "--reference",
+                str(root / "outputs" / "reference" / "output.json"),
+                "--candidate",
+                str(root / "outputs" / "identical" / "output.json"),
+                "--output",
+                str(output),
+            ]
+        )
+        == 2
+    )
+    assert output.read_bytes() == b"concurrent writer"
+    assert not list(tmp_path.glob(".report.json.tmp-*"))
+
+
+def test_drift_compare_rejects_incompatible_shape(tmp_path: Path) -> None:
+    import numpy as np
+
+    from voxelscope.fixtures import _write_output
+
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    candidate_path = root / "outputs" / "identical" / "output.json"
+    candidate = load_json(candidate_path)
+    _write_output(
+        candidate_path.parent,
+        "identical",
+        np.zeros((3, 6, 8, 9), dtype=np.float32),
+        volume_identity_sha256=candidate["volume_identity_sha256"],
+        model_identity_sha256=candidate["model_identity_sha256"],
+        window_ledger_sha256=candidate["window_ledger_sha256"],
+    )
+    output = tmp_path / "report.json"
+    assert (
+        main(
+            [
+                "drift",
+                "compare",
+                "--reference",
+                str(root / "outputs" / "reference" / "output.json"),
+                "--candidate",
+                str(candidate_path),
+                "--output",
+                str(output),
+            ]
+        )
+        == 2
+    )
+    assert not output.exists()
+
+
+def test_drift_compare_rejects_incompatible_spacing(tmp_path: Path) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    candidate_path = root / "outputs" / "identical" / "output.json"
+    candidate = load_json(candidate_path)
+    candidate["spacing_mm"] = [2.0, 1.5, 2.0]
+    write_json(candidate_path, candidate)
+    output = tmp_path / "report.json"
+    assert (
+        main(
+            [
+                "drift",
+                "compare",
+                "--reference",
+                str(root / "outputs" / "reference" / "output.json"),
+                "--candidate",
+                str(candidate_path),
+                "--output",
+                str(output),
+            ]
+        )
+        == 2
+    )
+    assert not output.exists()
+
+
+def test_drift_compare_checks_threshold_compatibility(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from dataclasses import replace
+
+    from voxelscope.bundle import load_output
+
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    reference = load_output(root / "outputs" / "reference" / "output.json")
+    candidate_identity, candidate_array = load_output(
+        root / "outputs" / "identical" / "output.json"
+    )
+    candidate_identity = replace(candidate_identity)
+    object.__setattr__(candidate_identity, "threshold", object())
+    values = iter((reference, (candidate_identity, candidate_array)))
+    monkeypatch.setattr(cli_module, "load_output", lambda path: next(values))
+    output = tmp_path / "report.json"
+    with pytest.raises(EvidenceError) as caught:
+        cli_module._drift_compare(Path("reference"), Path("candidate"), output)
+    assert caught.value.code == "incompatible_threshold"
+    assert not output.exists()

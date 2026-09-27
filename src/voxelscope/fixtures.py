@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -12,6 +11,7 @@ from typing import Any
 import numpy as np
 
 from .arrays import write_array
+from .atomic import path_occupied, rename_no_replace
 from .bundle import finalize_bundle
 from .canonical import EvidenceError, sha256_file, write_json
 from .drift import compare, component_summary, threshold_masks, validate_nested_masks
@@ -43,6 +43,8 @@ from .synthetic_contract import (
     SYNTHETIC_RUN_ID,
     SYNTHETIC_SPACING_MM,
     SYNTHETIC_STUDY_ID,
+    SYNTHETIC_SUMMARY_BYTES,
+    SYNTHETIC_SURFACE_DICE_TOLERANCE_MM,
     SYNTHETIC_TIMING_PROVENANCE,
     SYNTHETIC_VOLUME_ID,
     reference_probabilities,
@@ -164,7 +166,14 @@ def _write_bundle(root: Path) -> str:
         SYNTHETIC_OUTPUT_IDS,
         tuple(PlannedComparison(*item) for item in SYNTHETIC_COMPARISONS),
         tuple(
-            ExpectedRefusal(item.refusal_id, item.code, item.status, item.stage, item.evidence_path)
+            ExpectedRefusal(
+                item.refusal_id,
+                item.code,
+                item.status,
+                item.stage,
+                item.message,
+                item.evidence_path,
+            )
             for item in SYNTHETIC_REFUSALS
         ),
         None,
@@ -193,6 +202,7 @@ def _write_bundle(root: Path) -> str:
             reference_output_sha256=sha256_file(outputs[reference_id]),
             candidate_output_sha256=sha256_file(outputs[candidate_id]),
             report_id=report_id,
+            surface_dice_tolerance_mm=SYNTHETIC_SURFACE_DICE_TOLERANCE_MM,
         )
         write_json(root / "reports" / f"{report_id}.json", report)
 
@@ -218,7 +228,7 @@ def _write_bundle(root: Path) -> str:
             "refused",
             nesting_contract.code,
             nesting_contract.stage,
-            "ET is not a subset of TC",
+            nesting_contract.message,
             nesting_contract.evidence_path,
             (sha256_file(invalid_evidence_path),),
         ),
@@ -236,7 +246,7 @@ def _write_bundle(root: Path) -> str:
             "refused",
             padding_contract.code,
             padding_contract.stage,
-            "Only explicit high-side zero padding is supported",
+            padding_contract.message,
             padding_contract.evidence_path,
             (sha256_file(invalid_padding_path),),
         ),
@@ -275,14 +285,8 @@ def _write_bundle(root: Path) -> str:
             None,
         ),
     )
-    (root / "SUMMARY.txt").write_bytes(
-        b"VoxelScope synthetic evidence bundle\n"
-        b"Research use only. No medical data, model weights, GPU, or network were used.\n"
-        b"Claim scope: output preservation only. Diagnostic accuracy is not claimed.\n"
-        b"Scenarios: identical, boundary shift, ET loss, false positive, "
-        b"probability-only, empty surface.\n"
-        b"Root digest: see bundle.sha256.\n"
-    )
+    (root / "SUMMARY.txt").write_bytes(SYNTHETIC_SUMMARY_BYTES)
+
     return finalize_bundle(root)
 
 
@@ -303,13 +307,13 @@ def as_invalid_padding_request() -> dict[str, Any]:
 
 
 def build_fixture_bundle(output: Path) -> str:
-    if output.exists():
+    if path_occupied(output):
         raise EvidenceError("output_exists", str(output))
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(prefix=f".{output.name}.tmp-", dir=output.parent))
     try:
         root_hash = _write_bundle(temporary)
-        os.replace(temporary, output)
+        rename_no_replace(temporary, output)
         return root_hash
     finally:
         if temporary.exists():

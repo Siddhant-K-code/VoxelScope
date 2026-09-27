@@ -57,7 +57,10 @@ def require_int(value: Any, name: str) -> int:
 def require_number(value: Any, name: str) -> float:
     if type(value) not in {int, float}:
         raise EvidenceError("invalid_json_type", f"{name} must be a number")
-    result = float(value)
+    try:
+        result = float(value)
+    except OverflowError as exc:
+        raise EvidenceError("invalid_json_type", f"{name} must be a finite number") from exc
     if not math.isfinite(result):
         raise EvidenceError("invalid_json_type", f"{name} must be finite")
     return result
@@ -605,10 +608,14 @@ class ExpectedRefusal:
     code: str
     status: Literal["refused"]
     stage: str
+    message: str
     evidence_path: str
 
     def __post_init__(self) -> None:
-        if not all((self.refusal_id, self.code, self.stage)) or self.status != "refused":
+        if (
+            not all((self.refusal_id, self.code, self.stage, self.message))
+            or self.status != "refused"
+        ):
             raise EvidenceError("invalid_expected_refusal", "invalid expected refusal")
         safe_relative_path(self.evidence_path)
 
@@ -616,7 +623,7 @@ class ExpectedRefusal:
     def from_dict(cls, data: dict[str, Any]) -> ExpectedRefusal:
         data = strict_fields(
             data,
-            {"code", "evidence_path", "refusal_id", "stage", "status"},
+            {"code", "evidence_path", "message", "refusal_id", "stage", "status"},
             "ExpectedRefusal",
         )
         return cls(
@@ -624,6 +631,7 @@ class ExpectedRefusal:
             require_string(data["code"], "code"),
             require_string(data["status"], "status"),  # type: ignore[arg-type]
             require_string(data["stage"], "stage"),
+            require_string(data["message"], "message"),
             require_string(data["evidence_path"], "evidence_path"),
         )
 
