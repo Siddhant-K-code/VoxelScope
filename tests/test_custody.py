@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import stat
+import subprocess
 import zipfile
 from pathlib import Path
 
@@ -13,6 +14,7 @@ import pytest
 from voxelscope.canonical import EvidenceError, canonical_json_bytes, load_json
 from voxelscope.custody import (
     download_artifact,
+    init_private_root,
     load_acquisition_plan,
     load_source_registry,
     scan_public_tree,
@@ -33,6 +35,18 @@ from voxelscope.real_data_contract import verify_plan_contract
 ROOT = Path(__file__).parents[1]
 REGISTRY = ROOT / "research" / "source-registry-v1.json"
 PLAN = ROOT / "research" / "acquisition-plan-v1.json"
+
+
+def _git_repository(path: Path) -> Path:
+    subprocess.run(["git", "init", "-q", str(path)], check=True)
+    return path
+
+
+def _force_track(repository: Path, path: Path) -> None:
+    subprocess.run(
+        ["git", "-C", str(repository), "add", "-f", path.relative_to(repository).as_posix()],
+        check=True,
+    )
 
 
 def _private_root(tmp_path: Path) -> Path:
@@ -285,20 +299,179 @@ def test_private_receipt_is_owner_only_and_no_clobber(tmp_path: Path) -> None:
 def test_public_scan_rejects_private_material(
     tmp_path: Path, name: str, content: bytes, code: str
 ) -> None:
-    (tmp_path / name).write_bytes(content)
+    repository = _git_repository(tmp_path)
+    path = repository / name
+    path.write_bytes(content)
+    _force_track(repository, path)
     with pytest.raises(EvidenceError) as caught:
-        scan_public_tree(tmp_path)
+        scan_public_tree(repository)
     assert caught.value.code == code
 
 
 def test_public_scan_rejects_private_receipt(tmp_path: Path) -> None:
+    repository = _git_repository(tmp_path)
     receipt = {
         "artifact": {},
         "research_only": True,
-        "schema_version": "voxelscope/custody-receipt/v1",
+        "schema_version": "voxelscope/" + "custody-receipt/v1",
         "verified_at": "2026-09-27T00:00:00Z",
     }
-    (tmp_path / "receipt.json").write_bytes(canonical_json_bytes(receipt))
+    path = repository / "receipt.json"
+    path.write_bytes(canonical_json_bytes(receipt))
+    _force_track(repository, path)
     with pytest.raises(EvidenceError) as caught:
-        scan_public_tree(tmp_path)
+        scan_public_tree(repository)
     assert caught.value.code == "private_receipt_in_repository"
+
+
+@pytest.mark.parametrize("name", ["model.ts", "payload.bin"])
+def test_public_scan_rejects_large_torchscript_artifact(tmp_path: Path, name: str) -> None:
+    repository = _git_repository(tmp_path)
+    path = repository / name
+    with path.open("wb") as stream:
+        stream.write(b"PK\x03\x04model/data.pkl")
+        stream.seek(18_911_784 - 1)
+        stream.write(b"\0")
+    _force_track(repository, path)
+    with pytest.raises(EvidenceError) as caught:
+        scan_public_tree(repository)
+    assert caught.value.code == "private_artifact_in_repository"
+
+
+def test_public_scan_streams_large_sensitive_content(tmp_path: Path) -> None:
+    repository = _git_repository(tmp_path)
+    path = repository / "large.log"
+    path.write_bytes(
+        b"x" * (2 * 1024 * 1024 - 3) + ("/" + "Users" + "/alice/private/model.zip").encode()
+    )
+    _force_track(repository, path)
+    with pytest.raises(EvidenceError) as caught:
+        scan_public_tree(repository)
+    assert caught.value.code == "private_path_in_repository"
+
+
+def test_public_scan_streams_large_sensitive_json(tmp_path: Path) -> None:
+    repository = _git_repository(tmp_path)
+    path = repository / "large.json"
+    path.write_bytes(
+        b'{"padding":"'
+        + b"x" * (2 * 1024 * 1024)
+        + b'","schema_version" : "voxelscope/'
+        + b'custody-receipt/v1"}'
+    )
+    _force_track(repository, path)
+    with pytest.raises(EvidenceError) as caught:
+        scan_public_tree(repository)
+    assert caught.value.code == "private_receipt_in_repository"
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        (
+            b"C:"
+            + bytes([92])
+            + b"Users"
+            + bytes([92])
+            + b"alice"
+            + bytes([92])
+            + b"Patients"
+            + bytes([92])
+            + b"scan.nii.gz"
+        ),
+        (
+            b'{"path":"C:'
+            + bytes([92, 92])
+            + b"Users"
+            + bytes([92, 92])
+            + b"alice"
+            + bytes([92, 92])
+            + b"Patients"
+            + bytes([92, 92])
+            + b'scan.nii.gz"}'
+        ),
+    ],
+)
+def test_public_scan_rejects_windows_private_paths(tmp_path: Path, content: bytes) -> None:
+    repository = _git_repository(tmp_path)
+    path = repository / "path.log"
+    path.write_bytes(content)
+    _force_track(repository, path)
+    with pytest.raises(EvidenceError) as caught:
+        scan_public_tree(repository)
+    assert caught.value.code == "private_path_in_repository"
+
+
+def test_private_root_inside_repository_is_refused(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    with pytest.raises(EvidenceError) as caught:
+        init_private_root(repository / "build" / "custody", repository_root=repository)
+    assert caught.value.code == "custody_root_in_repository"
+
+
+def test_private_root_through_symlink_into_repository_is_refused(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    alias = tmp_path / "alias"
+    try:
+        alias.symlink_to(repository, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlink creation unavailable")
+    with pytest.raises(EvidenceError) as caught:
+        init_private_root(alias / "custody", repository_root=repository)
+    assert caught.value.code == "symlink_forbidden"
+
+
+@pytest.mark.parametrize("operation", ["init", "acquire", "verify"])
+def test_windows_private_custody_fails_before_mutation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, operation: str
+) -> None:
+    from voxelscope import custody
+
+    root = tmp_path / "custody"
+    monkeypatch.setattr(custody, "_is_windows", lambda: True)
+    with pytest.raises(EvidenceError) as caught:
+        if operation == "init":
+            init_private_root(root, repository_root=tmp_path)
+        elif operation == "acquire":
+            download_artifact(
+                load_acquisition_plan(PLAN).artifacts[0],
+                root,
+                allow_network=True,
+                repository_root=tmp_path,
+            )
+        else:
+            verify_and_receipt(
+                load_acquisition_plan(PLAN),
+                "monai-brats-bundle-v0.5.2",
+                root,
+                repository_root=tmp_path,
+            )
+    assert caught.value.code == "private_acl_unverified"
+    assert not root.exists()
+
+
+def test_scan_checks_force_tracked_file_under_build(tmp_path: Path) -> None:
+    repository = _git_repository(tmp_path)
+    build = repository / "build"
+    build.mkdir()
+    secret = build / "secret.log"
+    secret.write_bytes(("/" + "Users" + "/alice/private/model.zip").encode())
+    _force_track(repository, secret)
+    with pytest.raises(EvidenceError) as caught:
+        scan_public_tree(repository)
+    assert caught.value.code == "private_path_in_repository"
+
+
+@pytest.mark.parametrize("path", [REGISTRY, PLAN])
+def test_canonical_contracts_use_lf_only(path: Path) -> None:
+    data = path.read_bytes()
+    assert b"\r" not in data
+    assert data.endswith(b"\n")
+
+
+def test_gitattributes_pins_canonical_evidence_to_lf() -> None:
+    attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8").splitlines()
+    for entry in ("*.json text eol=lf", "*.jsonl text eol=lf", "uv.lock text eol=lf"):
+        assert entry in attributes

@@ -8,12 +8,18 @@ from .custody_records import AcquisitionPlan, SourceRegistry
 
 REGISTRY_ID = "voxelscope-real-data-readiness-v1"
 PLAN_ID = "voxelscope-private-custody-v1"
-REGISTRY_SHA256 = "53f7d897f6e72fd828f83781e252125b1ae79724fd8caa44ee37c3cd9abdadfb"
+REGISTRY_SHA256 = "8bc54b665a63f22555b5369d346a90e03bc32cb07e99c75af28e728ab8384e1f"
 PLAN_SHA256 = "7e35c6432bcd67d9f88e70e2eb9153785468573a08058c49c6e228deae6fb2cc"
 
 MONAI_SOURCE_ID = "monai-brats-mri-segmentation-ngc-v0.5.2"
 MONAI_VERSION = "0.5.2"
-MONAI_MODEL_ZOO_COMMIT = "ebdbeb6e1d374ec1e17f4f7f86406ecf19f943c6"
+MONAI_MODEL_ZOO_COMMIT = "5370ce6ea1dd132856b9c92e2fa125548594835d"
+MONAI_MODEL_INFO_URL = (
+    "https://raw.githubusercontent.com/Project-MONAI/model-zoo/"
+    "5370ce6ea1dd132856b9c92e2fa125548594835d/models/model_info.json"
+)
+MONAI_MODEL_INFO_BLOB_SHA1 = "a2da19efdb0b7f3afc12589d503100704218851a"
+MONAI_MODEL_INFO_SHA256 = "c25ae88807635399df5671322088ce4bbb59408506adb9c81120eb323d59511d"
 MONAI_ARCHIVE_URL = (
     "https://api.ngc.nvidia.com/v2/models/nvidia/monaihosting/"
     "brats_mri_segmentation/versions/0.5.2/files/"
@@ -65,6 +71,26 @@ def verify_registry_contract(registry: SourceRegistry) -> None:
     hashes = {digest.algorithm: digest.value for digest in archive.hashes}
     if hashes.get("sha1") != MONAI_ARCHIVE_SHA1 or hashes.get("sha256") != MONAI_ARCHIVE_SHA256:
         raise EvidenceError("registry_contract_mismatch", "MONAI archive hashes")
+    model_zoo = by_id["monai-model-zoo-v0.5.2"]
+    if (
+        model_zoo.immutable_id != f"git-commit:{MONAI_MODEL_ZOO_COMMIT}"
+        or model_zoo.canonical_url
+        != f"https://github.com/Project-MONAI/model-zoo/commit/{MONAI_MODEL_ZOO_COMMIT}"
+    ):
+        raise EvidenceError("registry_contract_mismatch", "MONAI model-zoo revision")
+    model_info = next(
+        (artifact for artifact in model_zoo.artifacts if artifact.path == "models/model_info.json"),
+        None,
+    )
+    if model_info is None or model_info.size_bytes != 117_477:
+        raise EvidenceError("registry_contract_mismatch", "MONAI model index identity")
+    model_info_hashes = {digest.algorithm: digest.value for digest in model_info.hashes}
+    if (
+        model_info_hashes.get("git-blob-sha1") != MONAI_MODEL_INFO_BLOB_SHA1
+        or model_info_hashes.get("sha256") != MONAI_MODEL_INFO_SHA256
+        or MONAI_MODEL_INFO_URL not in model_zoo.evidence
+    ):
+        raise EvidenceError("registry_contract_mismatch", "MONAI model index hashes")
     dataset = by_id[MSD_SOURCE_ID]
     if (
         dataset.canonical_url != MSD_ARCHIVE_URL

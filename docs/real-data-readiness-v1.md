@@ -10,7 +10,10 @@ The public source registry is [`research/source-registry-v1.json`](../research/s
 
 - Bundle: MONAI `brats_mri_segmentation` version `0.5.2`.
 - Official NGC archive: `https://api.ngc.nvidia.com/v2/models/nvidia/monaihosting/brats_mri_segmentation/versions/0.5.2/files/brats_mri_segmentation_v0.5.2.zip`.
-- Official model-zoo revision: `ebdbeb6e1d374ec1e17f4f7f86406ecf19f943c6`.
+- Official model-zoo revision: `5370ce6ea1dd132856b9c92e2fa125548594835d`.
+- Official model index: `https://raw.githubusercontent.com/Project-MONAI/model-zoo/5370ce6ea1dd132856b9c92e2fa125548594835d/models/model_info.json`.
+- Model index Git blob SHA-1: `a2da19efdb0b7f3afc12589d503100704218851a`.
+- Model index SHA-256: `c25ae88807635399df5671322088ce4bbb59408506adb9c81120eb323d59511d`.
 - License: Apache-2.0.
 - Archive size: 35,082,630 bytes.
 - Published archive SHA-1: `6b1dfef29d49c6f6a1d8bf9f65c84125ad37a6e9`.

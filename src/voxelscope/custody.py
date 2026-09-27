@@ -7,6 +7,7 @@ import hashlib
 import os
 import re
 import stat
+import subprocess
 import tempfile
 import urllib.error
 import urllib.parse
@@ -25,7 +26,6 @@ from .canonical import (
     ensure_no_symlink,
     is_link_like,
     load_json,
-    load_json_bytes,
     safe_relative_path,
     sha256_file,
 )
@@ -39,32 +39,49 @@ from .custody_records import (
 from .real_data_contract import verify_plan_contract, verify_registry_contract
 
 _REDIRECT_CODES = frozenset({301, 302, 303, 307, 308})
-_EXCLUDED_PUBLIC_DIRECTORIES = frozenset(
-    {
-        ".agent-traces",
-        ".git",
-        ".hypothesis",
-        ".mypy_cache",
-        ".pytest_cache",
-        ".ruff_cache",
-        ".venv",
-        "__pycache__",
-        "build",
-        "dist",
-    }
-)
 _FORBIDDEN_PUBLIC_SUFFIXES = (
     ".ckpt",
     ".dcm",
+    ".engine",
     ".nii",
     ".nii.gz",
     ".onnx",
+    ".plan",
     ".pt",
     ".pth",
+    ".safetensors",
     ".tar",
     ".tar.gz",
     ".tgz",
+    ".torchscript",
+    ".ts",
     ".zip",
+)
+_SCAN_CHUNK_BYTES = 1024 * 1024
+_SCAN_OVERLAP_BYTES = 4096
+_FORBIDDEN_PUBLIC_SHA256 = frozenset(
+    {
+        "729980a0bd9347bf2397701eb329e12517918dc282a2d09c40458e95b24ceed9",
+        "860ccb3f1c21c99d0410ad8a1ac4ef6b8fab60cec0a503b0ba42675741a750ae",
+    }
+)
+_MONAI_MODEL_TS_SIZE = 18_911_784
+_PRIVATE_PATH_PATTERNS = (
+    re.compile(rb"/" + rb"Users/[A-Za-z0-9._-]+/"),
+    re.compile(rb"/" + rb"home/[A-Za-z0-9._-]+/"),
+    re.compile(rb"[A-Za-z]:(?:\\{1,2})" + rb"Users(?:\\{1,2})[A-Za-z0-9._-]+(?:\\{1,2})"),
+)
+_SENSITIVE_PATTERNS = (
+    (re.compile(rb"AKIA[0-9A-Z]{16}"), "cloud credential"),
+    (re.compile(rb"AWS_" + rb"SECRET_ACCESS_KEY"), "cloud credential"),
+    (re.compile(rb"(?:NGC|NVIDIA)_" + rb"API_KEY"), "cloud credential"),
+    (re.compile(rb"ghp_" + rb"[A-Za-z0-9]{20,}"), "cloud credential"),
+    (re.compile(rb"-----BEGIN [A-Z ]*PRIVATE KEY-----"), "private key"),
+    (re.compile(rb"(?:X-Amz-Credential|Signature)="), "signed private URL"),
+    (re.compile(rb"BRATS_?[0-9]{3,}"), "subject identifier"),
+)
+_PRIVATE_RECEIPT_PATTERN = re.compile(
+    rb'"schema_version"\s*:\s*"voxelscope/' + rb'custody-receipt/v1"'
 )
 
 
@@ -156,27 +173,82 @@ def validate_download_url(artifact: AcquisitionArtifact, url: str) -> None:
         raise EvidenceError("redirect_not_allowlisted", _origin(url))
 
 
-def init_private_root(root: Path) -> None:
+def _resolved_inside(resolved_root: Path, repository_root: Path) -> bool:
+    resolved_repository = repository_root.resolve(strict=True)
+    return resolved_root == resolved_repository or resolved_repository in resolved_root.parents
+
+
+def _default_repository_root() -> Path:
+    completed = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise EvidenceError("repository_root_unavailable", "run custody commands in a checkout")
+    return Path(completed.stdout.strip()).resolve(strict=True)
+
+
+def _require_supported_private_platform() -> None:
+    if _is_windows():
+        raise EvidenceError(
+            "private_acl_unverified",
+            "private custody is disabled on Windows until restrictive ACLs are verified",
+        )
+
+
+def _is_windows() -> bool:
+    return os.name == "nt"
+
+
+def _reject_symlink_ancestors(path: Path) -> None:
+    current = path
+    while True:
+        if path_occupied(current) and is_link_like(current):
+            raise EvidenceError("symlink_forbidden", str(current))
+        if current.parent == current:
+            return
+        current = current.parent
+
+
+def init_private_root(root: Path, *, repository_root: Path | None = None) -> None:
+    _require_supported_private_platform()
+    repository_root = repository_root or _default_repository_root()
     if not root.is_absolute():
         raise EvidenceError("private_root_required", "custody root must be absolute")
-    if path_occupied(root):
-        raise EvidenceError("output_exists", str(root))
-    if not root.parent.is_dir() or is_link_like(root.parent):
+    lexical = Path(os.path.abspath(root))
+    _reject_symlink_ancestors(lexical)
+    resolved = lexical.resolve(strict=False)
+    if _resolved_inside(resolved, repository_root):
+        raise EvidenceError("custody_root_in_repository", str(root))
+    if path_occupied(resolved):
+        raise EvidenceError("output_exists", str(resolved))
+    if not resolved.parent.is_dir() or is_link_like(resolved.parent):
         raise EvidenceError("unsafe_path", "custody root parent must be a regular directory")
-    root.mkdir(mode=0o700)
-    if os.name != "nt":
-        os.chmod(root, 0o700)
+    resolved.mkdir(mode=0o700)
+    os.chmod(resolved, 0o700)
 
 
-def require_private_root(root: Path) -> None:
-    if not root.is_absolute() or is_link_like(root) or not root.is_dir():
+def require_private_root(root: Path, *, repository_root: Path | None = None) -> None:
+    _require_supported_private_platform()
+    repository_root = repository_root or _default_repository_root()
+    if not root.is_absolute():
         raise EvidenceError(
             "private_root_required", "custody root must be an absolute regular directory"
         )
-    if os.name != "nt":
-        metadata = root.stat()
-        if metadata.st_uid != os.getuid() or stat.S_IMODE(metadata.st_mode) & 0o077:
-            raise EvidenceError("private_root_permissions", "custody root must be owner-only")
+    lexical = Path(os.path.abspath(root))
+    _reject_symlink_ancestors(lexical)
+    resolved = lexical.resolve(strict=True)
+    if is_link_like(resolved) or not resolved.is_dir():
+        raise EvidenceError(
+            "private_root_required", "custody root must be an absolute regular directory"
+        )
+    if _resolved_inside(resolved, repository_root):
+        raise EvidenceError("custody_root_in_repository", str(root))
+    metadata = resolved.stat()
+    if metadata.st_uid != os.getuid() or stat.S_IMODE(metadata.st_mode) & 0o077:
+        raise EvidenceError("private_root_permissions", "custody root must be owner-only")
 
 
 def _mkdir_private_chain(root: Path, relative_parent: PurePosixPath) -> Path:
@@ -233,14 +305,21 @@ def _check_hashes(artifact: AcquisitionArtifact, size: int, actual: dict[str, st
             raise EvidenceError("artifact_hash_mismatch", digest.algorithm)
 
 
-def download_artifact(artifact: AcquisitionArtifact, root: Path, *, allow_network: bool) -> Path:
+def download_artifact(
+    artifact: AcquisitionArtifact,
+    root: Path,
+    *,
+    allow_network: bool,
+    repository_root: Path | None = None,
+) -> Path:
+    _require_supported_private_platform()
     if not allow_network:
         raise EvidenceError(
             "network_opt_in_required", "pass --allow-network to acquire an artifact"
         )
     if artifact.status != "ready":
         raise EvidenceError("acquisition_blocked", artifact.blocked_reason or artifact.artifact_id)
-    require_private_root(root)
+    require_private_root(root, repository_root=repository_root)
     relative = safe_relative_path(artifact.destination)
     destination = ensure_no_symlink(root, relative)
     if path_occupied(destination):
@@ -361,10 +440,13 @@ def verify_zip_archive(path: Path, policy: ArchivePolicy) -> dict[str, Any]:
     }
 
 
-def verify_staged_artifact(artifact: AcquisitionArtifact, root: Path) -> dict[str, Any]:
+def verify_staged_artifact(
+    artifact: AcquisitionArtifact, root: Path, *, repository_root: Path | None = None
+) -> dict[str, Any]:
+    _require_supported_private_platform()
     if artifact.status != "ready":
         raise EvidenceError("acquisition_blocked", artifact.blocked_reason or artifact.artifact_id)
-    require_private_root(root)
+    require_private_root(root, repository_root=repository_root)
     relative = safe_relative_path(artifact.destination)
     path = ensure_no_symlink(root, relative)
     if not path.is_file():
@@ -411,7 +493,7 @@ def _write_private_receipt(
         "plan_sha256": hashlib.sha256(canonical_json_bytes(plan)).hexdigest(),
         "registry_id": plan.registry_id,
         "research_only": True,
-        "schema_version": "voxelscope/custody-receipt/v1",
+        "schema_version": "voxelscope/" + "custody-receipt/v1",
         "source_id": artifact.source_id,
         "source_url": artifact.source_url,
         "verified_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
@@ -436,76 +518,118 @@ def _write_private_receipt(
     return destination
 
 
-def verify_and_receipt(plan: AcquisitionPlan, artifact_id: str, root: Path) -> dict[str, Any]:
+def verify_and_receipt(
+    plan: AcquisitionPlan,
+    artifact_id: str,
+    root: Path,
+    *,
+    repository_root: Path | None = None,
+) -> dict[str, Any]:
+    _require_supported_private_platform()
     artifact = next((item for item in plan.artifacts if item.artifact_id == artifact_id), None)
     if artifact is None:
         raise EvidenceError("unknown_artifact", artifact_id)
-    result = verify_staged_artifact(artifact, root)
+    result = verify_staged_artifact(artifact, root, repository_root=repository_root)
     _write_private_receipt(root, plan, artifact, result)
     return result
 
 
-def _public_files(root: Path) -> Iterable[Path]:
-    stack = [root]
-    while stack:
-        directory = stack.pop()
-        if is_link_like(directory):
-            raise EvidenceError("symlink_forbidden", str(directory.relative_to(root)))
-        with os.scandir(directory) as entries:
-            for entry in entries:
-                if entry.name in _EXCLUDED_PUBLIC_DIRECTORIES or entry.name.endswith(".egg-info"):
-                    continue
-                path = Path(entry.path)
-                if entry.is_symlink() or is_link_like(path):
-                    raise EvidenceError("symlink_forbidden", str(path.relative_to(root)))
-                if entry.is_dir(follow_symlinks=False):
-                    stack.append(path)
-                elif entry.is_file(follow_symlinks=False):
-                    yield path
-                else:
-                    raise EvidenceError("special_file_forbidden", str(path.relative_to(root)))
+def _public_files(root: Path) -> tuple[Path, ...]:
+    try:
+        repository_result = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise EvidenceError("repository_root_unavailable", str(root)) from exc
+    repository = Path(repository_result.stdout.strip()).resolve(strict=True)
+    if repository != root.resolve(strict=True):
+        raise EvidenceError("repository_root_required", str(root))
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(repository), "ls-files", "-z", "--cached"],
+            check=True,
+            capture_output=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise EvidenceError("tracked_files_unavailable", str(root)) from exc
+    paths: list[Path] = []
+    for raw in completed.stdout.split(b"\0"):
+        if not raw:
+            continue
+        try:
+            relative = safe_relative_path(raw.decode("utf-8"))
+        except UnicodeDecodeError as exc:
+            raise EvidenceError("unsafe_path", "tracked path is not UTF-8") from exc
+        path = ensure_no_symlink(repository, relative)
+        if not path.is_file():
+            raise EvidenceError("tracked_file_missing", relative.as_posix())
+        paths.append(path)
+    return tuple(paths)
+
+
+def _scan_file(
+    path: Path,
+    relative: str,
+    patterns: tuple[tuple[re.Pattern[bytes], str, str], ...],
+) -> tuple[str, int, bytes]:
+    tail = b""
+    prefix = b""
+    digest = hashlib.sha256()
+    size = 0
+    with path.open("rb") as stream:
+        while chunk := stream.read(_SCAN_CHUNK_BYTES):
+            digest.update(chunk)
+            size += len(chunk)
+            if len(prefix) < _SCAN_OVERLAP_BYTES:
+                prefix = (prefix + chunk)[:_SCAN_OVERLAP_BYTES]
+            data = tail + chunk
+            for pattern, code, description in patterns:
+                if pattern.search(data):
+                    raise EvidenceError(code, f"{relative}: {description}")
+            tail = data[-_SCAN_OVERLAP_BYTES:]
+    return digest.hexdigest(), size, prefix
 
 
 def scan_public_tree(root: Path) -> int:
+    root = root.resolve(strict=True)
     if is_link_like(root) or not root.is_dir():
         raise EvidenceError("unsafe_path", "public root must be a regular directory")
-    private_path_patterns = (
-        re.compile(rb"/" + rb"Users/[A-Za-z0-9._-]+/"),
-        re.compile(rb"/" + rb"home/[A-Za-z0-9._-]+/"),
-        re.compile(rb"[A-Za-z]:\\\\" + rb"Users\\\\"),
-    )
-    sensitive_patterns = (
-        (re.compile(rb"AKIA[0-9A-Z]{16}"), "cloud credential"),
-        (re.compile(rb"AWS_" + rb"SECRET_ACCESS_KEY"), "cloud credential"),
-        (re.compile(rb"(?:NGC|NVIDIA)_" + rb"API_KEY"), "cloud credential"),
-        (re.compile(rb"ghp_" + rb"[A-Za-z0-9]{20,}"), "cloud credential"),
-        (re.compile(rb"-----BEGIN [A-Z ]*PRIVATE KEY-----"), "private key"),
-        (re.compile(rb"(?:X-Amz-Credential|Signature)="), "signed private URL"),
-        (re.compile(rb"BRATS_?[0-9]{3,}"), "subject identifier"),
-    )
     count = 0
+    patterns = (
+        tuple(
+            (pattern, "private_path_in_repository", "private path")
+            for pattern in _PRIVATE_PATH_PATTERNS
+        )
+        + tuple(
+            (pattern, "sensitive_content_in_repository", description)
+            for pattern, description in _SENSITIVE_PATTERNS
+        )
+        + (
+            (
+                _PRIVATE_RECEIPT_PATTERN,
+                "private_receipt_in_repository",
+                "private custody receipt",
+            ),
+        )
+    )
     for path in _public_files(root):
         relative = path.relative_to(root).as_posix()
         lower = relative.lower()
-        if lower.endswith(_FORBIDDEN_PUBLIC_SUFFIXES):
-            raise EvidenceError("private_artifact_in_repository", relative)
         count += 1
-        if path.stat().st_size > 2 * 1024 * 1024:
-            continue
-        data = path.read_bytes()
-        for pattern in private_path_patterns:
-            if pattern.search(data):
-                raise EvidenceError("private_path_in_repository", relative)
-        for pattern, description in sensitive_patterns:
-            if pattern.search(data):
-                raise EvidenceError("sensitive_content_in_repository", f"{relative}: {description}")
-        if path.suffix == ".json":
-            try:
-                value = load_json_bytes(data, require_canonical=False)
-            except EvidenceError:
-                continue
-            if isinstance(value, dict) and value.get("schema_version") == (
-                "voxelscope/custody-receipt/v1"
-            ):
-                raise EvidenceError("private_receipt_in_repository", relative)
+        file_hash, size, prefix = _scan_file(path, relative, patterns)
+        torchscript_signature = (
+            size == _MONAI_MODEL_TS_SIZE
+            and prefix.startswith(b"PK\x03\x04")
+            and (b"data.pkl" in prefix or b"model" in prefix)
+        )
+        if (
+            path.name.casefold() == "model.ts"
+            or lower.endswith(_FORBIDDEN_PUBLIC_SUFFIXES)
+            or file_hash in _FORBIDDEN_PUBLIC_SHA256
+            or torchscript_signature
+        ):
+            raise EvidenceError("private_artifact_in_repository", relative)
     return count

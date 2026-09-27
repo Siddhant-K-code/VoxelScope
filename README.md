@@ -82,7 +82,7 @@ voxelscope custody scan-public --root .
 ```
 
 `fixture build`, `windows build`, and `drift compare` refuse to overwrite an existing destination.
-All custody commands are offline unless `custody acquire` receives `--allow-network`. Acquisition is restricted to the exact source and redirect origins in the canonical plan, requires known size and content hashes, refuses overwrite, never extracts archives, and writes receipts only under an owner-private root outside the repository.
+All custody commands are offline unless `custody acquire` receives `--allow-network`. Acquisition is restricted to the exact source and redirect origins in the canonical plan, requires known size and content hashes, refuses overwrite, never extracts archives, and writes receipts only under an owner-private root outside the repository. Private custody commands currently fail closed on Windows because restrictive ACL verification is not implemented.
 
 ## Evidence model
 

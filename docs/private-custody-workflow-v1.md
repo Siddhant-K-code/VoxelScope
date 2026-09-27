@@ -25,7 +25,7 @@ Choose an absolute directory outside the repository. Its parent must already exi
 uv run voxelscope custody init --root "$CUSTODY_ROOT"
 ```
 
-On POSIX systems the root and created subdirectories must be owner-only. Receipt files are created owner-readable and owner-writable only. The CLI refuses symlinks, existing destinations, and non-private roots.
+On POSIX systems the root and created subdirectories must be owner-only. Receipt files are created owner-readable and owner-writable only. The CLI refuses symlinks, existing destinations, in-repository roots, and non-private roots. Private custody commands fail closed on Windows because restrictive ACL verification is not implemented.
 
 ## Acquire the permitted model archive
 
