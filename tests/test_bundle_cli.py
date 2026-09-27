@@ -13,7 +13,7 @@ from voxelscope.canonical import EvidenceError, load_json, sha256_file, write_js
 from voxelscope.cli import main
 from voxelscope.fixtures import build_fixture_bundle
 
-GOLDEN_BUNDLE_SHA256 = "fa505b7e0951e26d2f6a181dae28526f68c3d5772f559d30eeb5ac51e8b13aed"
+GOLDEN_BUNDLE_SHA256 = "cc0f364fda43f4c29a446f8664fe458a3719092a9d2262d675aa76609882607e"
 
 
 def test_bundle_is_reproducible_and_matches_golden_hash(tmp_path: Path) -> None:
@@ -338,3 +338,129 @@ def test_receipt_timing_path_must_be_safe_and_bound(tmp_path: Path) -> None:
     with pytest.raises(EvidenceError) as caught:
         verify_bundle(root)
     assert caught.value.code == "unsafe_path"
+
+
+def test_refusal_evidence_must_bind_to_indexed_artifact_after_reseal(tmp_path: Path) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    request_path = root / "refusals" / "invalid-padding-request.json"
+    request = load_json(request_path)
+    request["mode"] = "changed-after-refusal"
+    write_json(request_path, request)
+    finalize_bundle(root)
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "unbound_refusal_evidence"
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected_code"),
+    [
+        ("model_kind", "unknown", "invalid_model_kind"),
+        ("license", "", "invalid_model_identity"),
+    ],
+)
+def test_model_runtime_literals_are_enforced_after_reseal(
+    tmp_path: Path, field: str, value: str, expected_code: str
+) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    path = root / "model-identity.json"
+    identity = load_json(path)
+    identity[field] = value
+    write_json(path, identity)
+    finalize_bundle(root)
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == expected_code
+
+
+def test_bundle_format_literal_is_enforced(tmp_path: Path) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    path = root / "bundle.json"
+    index = load_json(path)
+    index["bundle_format"] = "unknown"
+    write_json(path, index)
+    digest = sha256_file(path)
+    (root / "bundle.sha256").write_text(f"{digest}  bundle.json\n", encoding="ascii")
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "invalid_bundle_format"
+
+
+@pytest.mark.parametrize(("field", "value"), [("unit", "ms"), ("clock", "")])
+def test_timing_runtime_literals_are_enforced_after_reseal(
+    tmp_path: Path, field: str, value: str
+) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    path = root / "stage-timings.json"
+    timings = load_json(path)
+    timings["records"][0][field] = value
+    write_json(path, timings)
+    finalize_bundle(root)
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "invalid_timing"
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected_code"),
+    [
+        ("threshold_version", "unknown", "invalid_threshold"),
+        ("connectivity", 6, "invalid_components"),
+        ("output_id", "", "invalid_output_identity"),
+    ],
+)
+def test_output_runtime_contracts_are_enforced_after_reseal(
+    tmp_path: Path, field: str, value: object, expected_code: str
+) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    path = root / "outputs" / "identical" / "output.json"
+    output = load_json(path)
+    if field == "threshold_version":
+        output["threshold"]["version"] = value
+    elif field == "connectivity":
+        output["components"]["TC"]["connectivity"] = value
+    else:
+        output["output_id"] = value
+    write_json(path, output)
+    finalize_bundle(root)
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == expected_code
+
+
+def test_synthetic_manifest_claim_escalation_is_refused_after_reseal(tmp_path: Path) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    path = root / "study-manifest.json"
+    manifest = load_json(path)
+    index = load_json(root / "bundle.json")
+    manifest["claim_scope"] = "diagnostic_accuracy"
+    manifest["lineage_status"] = "proven_subject_nonoverlap"
+    manifest["lineage_evidence_sha256"] = [index["artifacts"][0]["sha256"]]
+    manifest["diagnostic_accuracy_allowed"] = True
+    write_json(path, manifest)
+    finalize_bundle(root)
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "synthetic_manifest_scope_mismatch"
+
+
+@pytest.mark.parametrize(("field", "value"), [("run_id", "other"), ("command", "other")])
+def test_synthetic_receipt_identity_is_exact_after_reseal(
+    tmp_path: Path, field: str, value: str
+) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    path = root / "run-receipt.json"
+    receipt = load_json(path)
+    receipt[field] = value
+    write_json(path, receipt)
+    finalize_bundle(root)
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "invalid_receipt"

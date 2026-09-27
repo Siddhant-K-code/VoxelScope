@@ -181,6 +181,8 @@ class ThresholdConfig:
     def __post_init__(self) -> None:
         if self.comparator != ">=" or set(self.values) != set(REGIONS):
             raise EvidenceError("invalid_threshold", "threshold fields differ")
+        if self.version != "fixed-0.5-v1":
+            raise EvidenceError("invalid_threshold", "unsupported threshold version")
         if any(value != 0.5 for value in self.values.values()):
             raise EvidenceError("invalid_threshold", "threshold must be inclusive 0.5")
 
@@ -201,6 +203,8 @@ class ComponentSummary:
     connectivity: Literal[26] = 26
 
     def __post_init__(self) -> None:
+        if self.connectivity != 26:
+            raise EvidenceError("invalid_components", "connectivity must equal 26")
         if self.count != len(self.voxel_sizes_descending) or self.count < 0:
             raise EvidenceError("invalid_components", "component count differs")
         if tuple(sorted(self.voxel_sizes_descending, reverse=True)) != self.voxel_sizes_descending:
@@ -278,7 +282,9 @@ class ModelBundleIdentity:
     weights_sha256: str | None
 
     def __post_init__(self) -> None:
-        if self.schema_version != SCHEMA_VERSION or not all((self.name, self.version, self.source)):
+        if self.schema_version != SCHEMA_VERSION or not all(
+            (self.name, self.version, self.source, self.license)
+        ):
             raise EvidenceError("invalid_model_identity", self.name)
         safe_relative_path(self.config_path)
         require_sha256(self.config_sha256)
@@ -338,7 +344,12 @@ class StageTimingRecord:
     reason: str | None
 
     def __post_init__(self) -> None:
-        if self.stage not in STAGES or self.available != (self.value is not None):
+        if (
+            self.stage not in STAGES
+            or self.unit != "ns"
+            or not self.clock
+            or self.available != (self.value is not None)
+        ):
             raise EvidenceError("invalid_timing", self.stage)
         if self.value is not None and self.value < 0:
             raise EvidenceError("invalid_timing", self.stage)
@@ -359,7 +370,11 @@ class OutputIdentity:
     components: dict[str, ComponentSummary]
 
     def __post_init__(self) -> None:
-        if self.schema_version != SCHEMA_VERSION or tuple(self.channel_order) != REGIONS:
+        if (
+            self.schema_version != SCHEMA_VERSION
+            or not self.output_id
+            or tuple(self.channel_order) != REGIONS
+        ):
             raise EvidenceError("invalid_output_identity", self.output_id)
         if set(self.masks) != set(REGIONS) or set(self.components) != set(REGIONS):
             raise EvidenceError("invalid_output_channels", self.output_id)
@@ -668,6 +683,8 @@ class BundleIndex:
     def __post_init__(self) -> None:
         if self.schema_version != SCHEMA_VERSION:
             raise EvidenceError("unsupported_schema", self.schema_version)
+        if self.bundle_format != "voxelscope-closed-bundle-v1":
+            raise EvidenceError("invalid_bundle_format", str(self.bundle_format))
         paths = [item.path for item in self.artifacts]
         if paths != sorted(paths) or len(paths) != len(set(paths)):
             raise EvidenceError("invalid_bundle_index", "paths must be sorted and unique")

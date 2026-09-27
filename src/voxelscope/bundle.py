@@ -47,9 +47,12 @@ def _media_type(path: Path) -> str:
 
 def finalize_bundle(root: Path) -> str:
     payload = sorted(
-        path
-        for path in root.rglob("*")
-        if path.is_file() and path.name not in {"bundle.json", "bundle.sha256"}
+        (
+            path
+            for path in root.rglob("*")
+            if path.is_file() and path.name not in {"bundle.json", "bundle.sha256"}
+        ),
+        key=lambda path: path.relative_to(root).as_posix(),
     )
     artifacts = tuple(
         BundleArtifact(
@@ -156,11 +159,19 @@ def verify_bundle(root: Path) -> str:
             raise EvidenceError("bundle_artifact_media_type_mismatch", item.path)
         if item.media_type == "application/json":
             load_json(path)
+    indexed_artifact_digests = {item.sha256 for item in index.artifacts}
 
     manifest_data = load_json(root / "study-manifest.json")
     if not isinstance(manifest_data, dict):
         raise EvidenceError("invalid_study_manifest", "manifest must be an object")
     manifest = StudyManifest.from_dict(manifest_data)
+    if (
+        manifest.claim_scope != "output_preservation"
+        or manifest.lineage_status != "unresolved"
+        or manifest.lineage_evidence_sha256
+        or manifest.diagnostic_accuracy_allowed
+    ):
+        raise EvidenceError("synthetic_manifest_scope_mismatch", "PR 1 scope was escalated")
     volume_path = ensure_no_symlink(root, safe_relative_path(manifest.volume_identity_path))
     volume, modalities = _load_volume(volume_path)
     if volume.spatial_shape != manifest.window_config.volume_shape:
@@ -304,6 +315,11 @@ def verify_bundle(root: Path) -> str:
         refusal = FailureState(**refusal_data)
         if refusal.refusal_id != refusal_id or refusal.code != expected_refusals[refusal_id]:
             raise EvidenceError("refusal_path_id_mismatch", refusal_path.name)
+        if (
+            not refusal.evidence_sha256
+            or not set(refusal.evidence_sha256) <= indexed_artifact_digests
+        ):
+            raise EvidenceError("unbound_refusal_evidence", refusal_path.name)
 
     receipt_data = load_json(root / "run-receipt.json")
     if not isinstance(receipt_data, dict):
@@ -326,8 +342,13 @@ def verify_bundle(root: Path) -> str:
         "RunReceipt",
     )
     receipt = RunReceipt(**receipt_data)
-    if receipt.status != "succeeded":
-        raise EvidenceError("invalid_receipt", "fixture receipt must succeed")
+    if (
+        receipt.status != "succeeded"
+        or receipt.run_id != "synthetic-fixture-v1"
+        or receipt.command != "voxelscope fixture build"
+        or receipt.failure_path is not None
+    ):
+        raise EvidenceError("invalid_receipt", "synthetic fixture receipt differs")
     timing_path = ensure_no_symlink(root, safe_relative_path(receipt.timings_path))
     if not timing_path.is_file():
         raise EvidenceError("invalid_receipt", "timing path does not resolve")

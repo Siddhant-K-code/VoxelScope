@@ -246,7 +246,7 @@ def _write_bundle(root: Path) -> str:
         "invalid_nested_regions",
         "postprocess",
         "ET is not a subset of TC",
-        (str(invalid_data["content_sha256"]),),
+        (str(invalid_data["file_sha256"]),),
     )
     write_json(root / "refusals" / "invalid-nesting.json", nesting_failure)
     invalid_padding = {
