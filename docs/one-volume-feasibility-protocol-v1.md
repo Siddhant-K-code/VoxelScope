@@ -6,6 +6,8 @@ This is a prospective, zero-inference protocol. It does not authorize execution.
 
 The protocol is research infrastructure only. It does not assess diagnosis, treatment, clinical safety, radiologist equivalence, patient-specific validity, or diagnostic accuracy. No clinical meaning may be inferred from a model name, channel, label, or mask.
 
+This protocol was never executed and is superseded by [`one-volume-feasibility-protocol-v2.md`](one-volume-feasibility-protocol-v2.md). Its Task01 scope is retained as a historical decision record.
+
 ## Preconditions
 
 Execution remains prohibited until every gate in [`real-data-readiness-v1.md`](real-data-readiness-v1.md) has an approved GO record. Required approvals include:

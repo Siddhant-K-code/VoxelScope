@@ -2,35 +2,78 @@
 
 ## Status
 
-This is a non-executable planning document. PR 1 does not authorize or perform model acquisition, dataset acquisition, medical-data handling, GPU execution, MPS execution, cloud provisioning, or spending.
+This is a non-executable planning document. It does not authorize medical-data acquisition, file inspection, model loading, inference, GPU or MPS execution, cloud provisioning, or spending.
 
-## Acquisition gates
+Milestone 3 establishes:
 
-The exact acquisition commands remain placeholders until an independent reviewer pins all identities and terms.
+- The official MONAI `brats_mri_segmentation` 0.5.2 model identity is pinned.
+- The model archive is privately acquired and hash-verified without extraction or loading.
+- OpenNeuro `ds007045` v2.0.1 source identity and one-volume selection are GO.
+- The OpenNeuro acquisition plan remains network-disabled and blocked.
+- Real-data inference remains NO-GO.
 
-### Model placeholder
+## Model custody state
 
-1. Confirm the official MONAI `brats_mri_segmentation` bundle source and immutable version.
-2. Record the source commit or release, Apache-2.0 notice, configuration hash, weights hash, network hash, preprocessing contract, and documented input shape.
-3. Review the bundle for remote code, dynamic dependencies, and license obligations.
-4. Replace `[MODEL_ACQUISITION_COMMAND_PENDING_REVIEW]` only through a reviewed protocol amendment.
-5. Acquire locally into a quarantined staging directory, verify hashes before loading, and copy only approved artifacts into custody.
+The model source, version, archive size, published SHA-1, observed SHA-256, closed member list, Apache-2.0 notice, configuration identities, and checkpoint identities are pinned by milestone 2.
 
-### Dataset placeholder
+Future work must not reacquire, extract, deserialize, or load the model until the execution protocol explicitly permits that action. Before use, an operator must review the existing private receipt and independently confirm that the custody root and artifact remain unchanged.
 
-1. Confirm the Medical Segmentation Decathlon Task01 BrainTumour source, immutable object identity, and CC BY-SA 4.0 obligations.
-2. Document the modality mapping from FLAIR, T1w, T1gd, and T2w to the model contract.
-3. Resolve whether any candidate subject overlaps BraTS 2018 training data.
-4. Replace `[DATASET_ACQUISITION_COMMAND_PENDING_REVIEW]` only through a reviewed protocol amendment.
-5. Stage exactly one approved volume locally, scan it for identifiers, and hash it before any transformation.
+## Dataset acquisition gate
 
-A mutable URL, filename, or dataset title is not an identity. No acquisition proceeds while lineage is unresolved if diagnostic accuracy is proposed.
+The canonical plan is [`research/one-volume-acquisition-plan-v1.json`](../research/one-volume-acquisition-plan-v1.json). It pins four N4-only MRI objects in model order T1c, T1, T2, and FLAIR, one spatially aligned mask, and three dataset metadata files.
+
+The selected case is fixed by an outcome-blind rule: the lexicographically first snapshot subject directory with the complete required file set, determined from tree metadata before any medical-byte, label-content, lesion-property, or model-output inspection.
+
+The plan is blocked and has no acquisition command. To advance it:
+
+1. Obtain explicit operator approval for the exact canonical plan hash.
+2. Add or approve a private-custody acquisition mechanism that requires an owner-only root outside the repository, exact URL and origin allowlists, no redirect outside those origins, no retry, and no overwrite.
+3. Acquire only the eight pinned objects. Do not acquire the full dataset or use range extraction from a bulk archive.
+4. Verify every expected byte size and SHA-256 before opening any file.
+5. Write owner-only receipts without publishing private paths, signed URLs, medical bytes, or private receipt content.
+6. Stop after custody verification until the structural and preprocessing gates are separately approved.
+
+The source record uses a public deidentified BIDS locator only to bind the five medical objects. No participant crosswalk, direct identity, or clinical metadata may enter public evidence.
+
+## NIfTI structural gate
+
+After private acquisition and before model loading:
+
+1. Inspect only NIfTI headers and bounded structural properties.
+2. Verify regular files, expected compression, dtype, finite values, dimensions, affine matrices, spacing, orientation, and exact geometry across all four modalities and the mask.
+3. Confirm that the mask is integer-valued and contains only source values 0, 1, 2, and 3.
+4. Record all observations in private hash-bound evidence.
+5. Stop on any mismatch, unexpected value, malformed header, decompression limit, or evidence-write failure.
+
+No voxel rendering, model execution, or diagnostic assessment is authorized by this gate.
+
+## Preprocessing and label gate
+
+The selected source derivative is MNI152-registered, skull-stripped, and N4-corrected. The pre-z-scored derivative is not selected because the pinned MONAI inference configuration performs channel-wise normalization over nonzero voxels.
+
+Before inference, a reviewed adapter must define:
+
+1. Exact loading and stacking in T1c, T1, T2, and FLAIR order.
+2. Whether source geometry is accepted unchanged or transformed, with a hash-bound proof.
+3. Exact reproduction of the bundle's nonzero channel-wise normalization.
+4. Output inversion, sigmoid, threshold 0.5, and nested TC, WT, and ET channel handling.
+5. Any comparison-only mapping between source-mask labels and model output labels.
+
+The source mask uses 0 for background, 1 for necrotic core, 2 for non-enhancing or edematous tumor, and 3 for contrast-enhancing tumor. The model output encoding uses 0, 1, 2, and 4 after collapsing nested channels with ET priority. A numeric source 3 to model-output 4 mapping has been identified but is not authorized. It does not prove full semantic equivalence, especially for source value 2.
+
+The label remains custody-only unless a later protocol proves semantic equivalence and authorizes its use. Output-preservation comparisons between runtime executions do not require a reference-label accuracy metric.
+
+## Subject overlap gate
+
+The model was trained on BraTS 2018. The selected OpenNeuro cohort is described as a separate collection acquired from 2018 through 2025, but the selected case acquisition date and the model's exact training roster are not available in the public contract.
+
+Treat overlap as unresolved. Unless independently resolved or explicitly bounded in an approved amendment, report only output preservation against the same pinned FP32 reference. Do not report reference-label accuracy, diagnostic validity, clinical safety, or patient-specific performance.
 
 ## Local M5 Pro role
 
-The local Apple M5 Pro environment is intended for fixture generation, schema development, verifier execution, report rendering preparation, test execution, and evidence inspection. A later amendment may permit an isolated MPS compatibility probe. Such a probe is not a reference arm, not a performance result, and not part of PR 1.
+The local Apple M5 Pro environment is limited to fixture generation, schema development, verifier execution, report preparation, test execution, and approved evidence inspection. A later amendment may permit an isolated MPS compatibility probe. Such a probe is not a reference arm or performance result.
 
-Local work must not silently alter affine orientation, modality order, threshold policy, padding, or array dtype. No patient data or secrets belong in the repository, test cache, logs, screenshots, or issue attachments.
+Local work must not silently alter affine orientation, modality order, threshold policy, padding, or array dtype. No medical data, private paths, credentials, or private receipts belong in the repository, test cache, logs, screenshots, or issue attachments.
 
 ## First real cloud pass
 
@@ -53,4 +96,13 @@ The future order is PyTorch FP32 reference and exact repeat, PyTorch AMP, Tensor
 
 ## Remaining approvals
 
-Real execution remains blocked on model identity, dataset identity, license and terms review, subject-lineage evidence, one-volume selection, preprocessing equivalence, runtime image identity, cloud budget authorization, and independent protocol review.
+Real execution remains blocked on:
+
+- Explicit approval and private execution of the OpenNeuro acquisition plan.
+- Private NIfTI structural and cross-file geometry verification.
+- Preprocessing adapter and equivalence review.
+- Source-mask and model-output semantic mapping review.
+- Subject-overlap resolution or an approved output-preservation-only bound.
+- Runtime image, library, CUDA, driver, and backend identities.
+- Host selection, budget authorization, and independent protocol review.
+- An explicit operator start action.

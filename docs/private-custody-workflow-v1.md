@@ -8,6 +8,10 @@ The custody workflow stores artifacts and receipts outside the repository. It do
 uv run voxelscope source verify \
   --registry research/source-registry-v1.json
 
+uv run voxelscope source one-volume \
+  --record research/one-volume-source-decision-v1.json \
+  --plan research/one-volume-acquisition-plan-v1.json
+
 uv run voxelscope custody plan \
   --registry research/source-registry-v1.json \
   --plan research/acquisition-plan-v1.json
@@ -15,7 +19,7 @@ uv run voxelscope custody plan \
 uv run voxelscope custody scan-public --root .
 ```
 
-These commands use only repository content. The plan remains NO-GO because Task01 single-file acquisition is blocked.
+These commands use only repository content. The milestone 2 Task01 plan remains NO-GO. The milestone 3 OpenNeuro source path is GO, but its acquisition plan is explicitly blocked and has no acquisition command pending operator approval.
 
 ## Initialize owner-private custody
 
@@ -70,4 +74,6 @@ Verification writes a new no-clobber receipt. A second receipt with the same art
 
 Do not invoke acquisition for `msd-task01-single-volume`. The plan marks it blocked and the CLI refuses it mechanically. The official bucket exposes only the full 7.6 GB Task01 tar. VoxelScope does not download that archive, range-extract members, or infer candidate identities from unofficial mirrors.
 
-The next acceptable data source must provide direct official URLs for one image, its matching label, and `dataset.json`, with immutable expected sizes and hashes.
+The OpenNeuro source selected in milestone 3 provides four direct modality objects, a matching aligned label, and versioned metadata with immutable expected sizes and hashes. The blocked plan is [`one-volume-acquisition-plan-v1.json`](../research/one-volume-acquisition-plan-v1.json), and the candidate matrix is in [`one-volume-source-decision-v1.md`](one-volume-source-decision-v1.md).
+
+Do not acquire these objects until an operator explicitly approves the plan and supplies a new custody command or equivalent reviewed mechanism. The current CLI can verify and render the plan but cannot execute it.
