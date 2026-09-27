@@ -101,9 +101,11 @@ def require_sha256(value: str, field: str = "sha256") -> None:
 
 
 _DOS_RESERVED_BASENAMES = frozenset(
-    {"CON", "PRN", "AUX", "NUL"}
+    {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}
     | {f"COM{index}" for index in range(1, 10)}
     | {f"LPT{index}" for index in range(1, 10)}
+    | {f"COM{index}" for index in "¹²³"}
+    | {f"LPT{index}" for index in "¹²³"}
 )
 
 
@@ -116,7 +118,7 @@ def safe_relative_path(value: str) -> PurePosixPath:
         or ":" in part
         or part.endswith((".", " "))
         or any(ord(character) < 32 or ord(character) == 127 for character in part)
-        or part.split(".", 1)[0].upper() in _DOS_RESERVED_BASENAMES
+        or part.split(".", 1)[0].rstrip(" ").upper() in _DOS_RESERVED_BASENAMES
         for part in path.parts
     )
     if path.is_absolute() or path.as_posix() != value or unsafe_component:

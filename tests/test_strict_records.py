@@ -127,3 +127,35 @@ def test_link_like_helper_detects_mocked_junction(
     target.mkdir()
     monkeypatch.setattr(type(target), "is_junction", lambda self: self == target, raising=False)
     assert is_link_like(target)
+
+
+_WIN32_RESERVED_ALIASES = (
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    "CONIN$",
+    "CONOUT$",
+    *(f"COM{index}" for index in range(1, 10)),
+    *(f"LPT{index}" for index in range(1, 10)),
+    *(f"COM{index}" for index in "¹²³"),
+    *(f"LPT{index}" for index in "¹²³"),
+)
+
+
+@pytest.mark.parametrize("alias", _WIN32_RESERVED_ALIASES)
+@pytest.mark.parametrize("variant", ("plain", "extension", "lowercase", "space-before-extension"))
+def test_safe_relative_path_rejects_all_win32_reserved_aliases(alias: str, variant: str) -> None:
+    from voxelscope.canonical import safe_relative_path
+
+    if variant == "plain":
+        value = alias
+    elif variant == "extension":
+        value = f"folder/{alias}.txt"
+    elif variant == "lowercase":
+        value = f"folder/{alias.lower()}.json"
+    else:
+        value = f"folder/{alias} .bin"
+    with pytest.raises(EvidenceError) as caught:
+        safe_relative_path(value)
+    assert caught.value.code == "unsafe_path"
