@@ -259,6 +259,7 @@ def test_current_docs_use_protocol_v2_and_preserve_v1_history() -> None:
     assert "exactly one privately held Task01 training volume" in protocol_v1
     assert "active prospective, zero-inference protocol" in protocol_v2
     assert "selected OpenNeuro `ds007045` v2.0.1 case" in protocol_v2
-    assert "repository-assigned deidentified BIDS locator" in protocol_v2
+    assert "repository-published deidentified locators" in protocol_v2
     assert "Publish no participant crosswalk, direct identity, clinical metadata" in protocol_v2
+    assert "Keep locally derived private custody hashes and receipt content private" in protocol_v2
     assert "OpenNeuro `ds007045` v2.0.1 source identity and one-volume selection are GO" in runbook

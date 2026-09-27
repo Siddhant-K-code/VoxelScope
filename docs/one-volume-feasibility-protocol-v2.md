@@ -29,9 +29,9 @@ The case selection is outcome-blind: choose the lexicographically first snapshot
 - Use exactly the selected OpenNeuro `ds007045` v2.0.1 case pinned by [`research/one-volume-source-decision-v1.json`](../research/one-volume-source-decision-v1.json) and [`research/one-volume-acquisition-plan-v1.json`](../research/one-volume-acquisition-plan-v1.json).
 - Use the pinned MONAI `brats_mri_segmentation` 0.5.2 checkpoint.
 - Preserve all source, model, environment, preprocessing, window, output, and run identities in private evidence.
-- Canonical source records may publish only the repository-assigned deidentified BIDS locator and exact immutable source paths needed to bind the artifacts.
+- Canonical source records may publish only repository-published deidentified locators, exact immutable source paths, sizes, version IDs, ETags, and hashes needed to bind official public artifacts.
 - Publish no participant crosswalk, direct identity, clinical metadata, medical bytes, private custody path, signed URL, or private receipt.
-- Publish a medical-data hash only after an owner determines that it cannot disclose or enable linkage to a subject identity. Otherwise publish status and counts only.
+- Keep locally derived private custody hashes and receipt content private unless a separate privacy review approves publication. A hash identical to an already published official source identity may be referenced as that public identity, but its private receipt and custody path remain private.
 - Do not provision or change cloud resources from the run command.
 
 ## Arm order
