@@ -37,6 +37,11 @@ from .custody import (
 )
 from .drift import compare
 from .fixtures import build_fixture_bundle
+from .one_volume import (
+    render_one_volume_decision,
+    verify_one_volume_decision,
+    verify_one_volume_plan,
+)
 from .real_data_contract import verify_plan_contract
 from .records import StudyManifest, VolumeIdentity
 from .windows import build_window_evidence
@@ -73,6 +78,9 @@ def _parser() -> argparse.ArgumentParser:
     source_sub = source.add_subparsers(dest="source_command", required=True)
     source_verify = source_sub.add_parser("verify")
     source_verify.add_argument("--registry", type=Path, required=True)
+    source_decision = source_sub.add_parser("one-volume")
+    source_decision.add_argument("--record", type=Path, required=True)
+    source_decision.add_argument("--plan", type=Path, required=True)
 
     custody = top.add_parser("custody", help="plan and verify private artifact custody")
     custody_sub = custody.add_subparsers(dest="custody_command", required=True)
@@ -202,6 +210,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"report_sha256={_drift_compare(args.reference, args.candidate, args.output)}")
         elif args.command == "source" and args.source_command == "verify":
             print(f"verified_registry_sha256={verify_public_contracts(args.registry)}")
+        elif args.command == "source" and args.source_command == "one-volume":
+            decision, decision_sha256 = verify_one_volume_decision(args.record)
+            one_volume_plan, plan_sha256 = verify_one_volume_plan(args.plan, decision)
+            print(f"verified_decision_sha256={decision_sha256}")
+            print(f"verified_plan_sha256={plan_sha256}")
+            print(render_one_volume_decision(decision, one_volume_plan), end="")
         elif args.command == "custody" and args.custody_command == "plan":
             registry = load_source_registry(args.registry)
             plan = load_acquisition_plan(args.plan)

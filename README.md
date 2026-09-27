@@ -10,9 +10,9 @@ VoxelScope is research-only software. It does not provide diagnosis, treatment, 
 
 ## Current status
 
-Milestone 2 adds official source pins and private custody controls on top of the PR 1 synthetic foundation. The official MONAI `brats_mri_segmentation` 0.5.2 archive has been acquired and verified in owner-private session storage without extraction or model loading. Medical Segmentation Decathlon Task01 remains blocked because the official bucket exposes only the full 7.6 GB tar, not direct objects for one training image, its label, and `dataset.json`.
+Milestone 3 adds a versioned one-volume source decision on top of the milestone 2 private custody controls. The official MONAI `brats_mri_segmentation` 0.5.2 archive remains privately verified without extraction or model loading. Independent Exa.ai and Parallel.ai research found a source-path GO in OpenNeuro `ds007045` v2.0.1: four direct N4-corrected MRI objects, one aligned label, and versioned metadata are pinned by official identities, sizes, and hashes. The acquisition plan remains blocked and network-disabled.
 
-The project is still **NO-GO** for real-data inference. It has not loaded a model, inspected voxel arrays, run inference, used a GPU, provisioned cloud resources, authorized spend, or measured diagnostic accuracy.
+The project is still **NO-GO** for real-data inference. No medical artifact was downloaded. NIfTI geometry, label semantic equivalence, preprocessing equivalence, and model-training overlap remain unresolved. The project has not loaded a model, inspected voxel arrays, run inference, used a GPU, provisioned cloud resources, authorized spend, or measured diagnostic accuracy.
 
 The current package provides:
 
@@ -44,6 +44,9 @@ src/voxelscope/
   fixtures.py    Deterministic synthetic evidence generation
   custody_records.py  Versioned source and acquisition records
   real_data_contract.py  Trusted milestone 2 source and plan pins
+  one_volume_records.py  Typed milestone 3 source-decision evidence
+  one_volume_contract.py  Trusted milestone 3 decision pin
+  one_volume.py  Offline decision verification and rendering
   custody.py      Private acquisition, archive verification, and public scans
   cli.py         Offline command-line interface
 ```
@@ -75,6 +78,9 @@ voxelscope drift compare \
   --candidate build/evidence/outputs/one-voxel-boundary/output.json \
   --output build/boundary-report.json
 voxelscope source verify --registry research/source-registry-v1.json
+voxelscope source one-volume \
+  --record research/one-volume-source-decision-v1.json \
+  --plan research/one-volume-acquisition-plan-v1.json
 voxelscope custody plan \
   --registry research/source-registry-v1.json \
   --plan research/acquisition-plan-v1.json
@@ -92,7 +98,7 @@ Same-runtime deterministic repeats are expected to have byte-identical canonical
 
 ## Data lineage rule
 
-The planned public dataset derives from earlier BraTS releases, while the planned MONAI model was trained on BraTS 2018. Subject overlap is therefore unresolved by default. VoxelScope fails closed: no diagnostic-accuracy claim is allowed unless subject non-overlap is independently proven and hash-bound. Without that proof, only output preservation against a pinned FP32 reference may be reported.
+The pinned MONAI model was trained on BraTS 2018. The selected OpenNeuro cohort reports acquisitions from 2018 through 2025 and is described as a separate collection, but neither the selected case acquisition date nor the model's exact training roster is available in the public contract. Subject overlap is therefore unresolved. VoxelScope fails closed: no diagnostic-accuracy claim is allowed unless non-overlap is independently proven and hash-bound. Without that proof, only output preservation against a pinned FP32 reference may be reported.
 
 ## Explicit non-claims
 
@@ -109,7 +115,7 @@ See [the real-data readiness record](docs/real-data-readiness-v1.md), [one-volum
 
 ## Next gate
 
-Obtain exact official direct URLs, sizes, and content hashes for one Task01 training image, its matching label, and `dataset.json`. Do not download the full Task01 tar as a workaround. Private custody and reviewer approval of those three objects are required before preprocessing equivalence or host authorization can move to GO.
+Review and explicitly authorize the blocked OpenNeuro one-volume plan. After private acquisition, verify all expected hashes and inspect NIfTI shape, affine, dtype, finite values, and cross-file geometry without loading a model. Preregister the numeric ET remap from dataset value 3 to 4, keep broader label semantic equivalence unresolved, and resolve or explicitly bound model-training overlap before any label comparison.
 
 ## License
 

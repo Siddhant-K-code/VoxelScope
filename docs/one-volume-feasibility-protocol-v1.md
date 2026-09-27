@@ -20,6 +20,8 @@ Execution remains prohibited until every gate in [`real-data-readiness-v1.md`](r
 
 The label is retained for custody identity only. It must not be used to compute diagnostic accuracy unless exact subject non-overlap is proved prospectively.
 
+Milestone 3 identifies an OpenNeuro source path, but its acquisition plan remains blocked. Source-path GO does not satisfy any execution precondition in this protocol.
+
 ## Fixed study scope
 
 - Use exactly one privately held Task01 training volume.

@@ -25,7 +25,7 @@ def _strings(value: Any, name: str) -> tuple[str, ...]:
     return tuple(require_string(item, f"{name} item") for item in require_list(value, name))
 
 
-def _https_url(value: Any, name: str, *, origin_only: bool = False) -> str:
+def require_https_url(value: Any, name: str, *, origin_only: bool = False) -> str:
     url = require_string(value, name)
     parsed = urlsplit(url)
     if (
@@ -157,7 +157,7 @@ class SourceRecord:
     artifacts: tuple[SourceArtifact, ...]
 
     def __post_init__(self) -> None:
-        _https_url(self.canonical_url, "canonical_url")
+        require_https_url(self.canonical_url, "canonical_url")
         if self.verification_status not in {"verified", "partial", "blocked"}:
             raise EvidenceError("invalid_verification_status", self.verification_status)
         paths = [artifact.path for artifact in self.artifacts]
@@ -189,7 +189,7 @@ class SourceRecord:
         return cls(
             source_id=require_string(data["source_id"], "source_id"),
             source_kind=require_string(data["source_kind"], "source_kind"),
-            canonical_url=_https_url(data["canonical_url"], "canonical_url"),
+            canonical_url=require_https_url(data["canonical_url"], "canonical_url"),
             immutable_id=immutable_id,
             expected_license=require_string(data["expected_license"], "expected_license"),
             retrieved_on=require_string(data["retrieved_on"], "retrieved_on"),
@@ -352,12 +352,12 @@ class AcquisitionArtifact:
     archive: ArchivePolicy | None
 
     def __post_init__(self) -> None:
-        _https_url(self.source_url, "source_url")
+        require_https_url(self.source_url, "source_url")
         source_origin = f"{urlsplit(self.source_url).scheme}://{urlsplit(self.source_url).netloc}"
         if not self.allowed_origins or source_origin not in self.allowed_origins:
             raise EvidenceError("source_not_allowlisted", self.source_url)
         for origin in self.allowed_origins:
-            _https_url(origin, "allowed_origin", origin_only=True)
+            require_https_url(origin, "allowed_origin", origin_only=True)
         safe_relative_path(self.destination)
         if self.expected_size_bytes <= 0:
             raise EvidenceError("invalid_size", self.artifact_id)
@@ -404,9 +404,9 @@ class AcquisitionArtifact:
             artifact_id=require_string(data["artifact_id"], "artifact_id"),
             source_id=require_string(data["source_id"], "source_id"),
             role=require_string(data["role"], "role"),
-            source_url=_https_url(data["source_url"], "source_url"),
+            source_url=require_https_url(data["source_url"], "source_url"),
             allowed_origins=tuple(
-                _https_url(item, "allowed_origin", origin_only=True)
+                require_https_url(item, "allowed_origin", origin_only=True)
                 for item in require_list(data["allowed_origins"], "allowed_origins")
             ),
             destination=require_string(data["destination"], "destination"),

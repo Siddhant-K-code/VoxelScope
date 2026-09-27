@@ -2,6 +2,8 @@
 
 VoxelScope remains **NO-GO** for a real-data feasibility run. This milestone prepares source and custody contracts only. It does not load a model, inspect voxel arrays, run inference, provision a host, authorize GPU spend, or support a clinical claim.
 
+Milestone 3 preserves this record and its controls. The later evidence review in [`one-volume-source-decision-v1.md`](one-volume-source-decision-v1.md) found an official direct source path, but acquisition and inference remain NO-GO.
+
 ## Pinned sources
 
 The public source registry is [`research/source-registry-v1.json`](../research/source-registry-v1.json). It separates observed evidence from assumptions and is verified as canonical JSON by the offline CLI.
@@ -73,3 +75,5 @@ Task01 custody is blocked because exact single-file acquisition from the officia
 ## Next operator action
 
 Obtain an official, directly addressable source for exactly one Task01 training image, its matching label, and the exact `dataset.json`, with immutable sizes and content hashes. Do not download the full Task01 tar as a workaround. After those three objects are privately staged and reviewed, create a new readiness revision that resolves data identity and preprocessing equivalence while keeping subject overlap unresolved unless exact non-overlap evidence exists.
+
+The milestone 3 decision selects an OpenNeuro source path with pinned direct objects. Its acquisition plan is still blocked pending operator approval, and later inference gates remain unresolved. See [`one-volume-source-decision-v1.md`](one-volume-source-decision-v1.md).
