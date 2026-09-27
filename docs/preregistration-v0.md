@@ -60,13 +60,15 @@ Each arm records these non-overlapping stages in integer nanoseconds from a name
 7. `postprocess`: fixed thresholding and mask construction.
 8. `write`: evidence serialization and checksum finalization.
 
-Unavailable or unexecuted stages have `value: null`, `available: false`, and an explicit reason. Values are never estimated or replaced by zero.
+Unavailable or unexecuted stages have `value: null`, `available: false`, and an explicit reason. PR 1 binds all eight records to the indexed `timing-provenance.json` file by path and hash. Values are never estimated or replaced by zero.
 
 ## Exactness and drift metrics
 
 All regions use the inclusive fixed threshold `probability >= 0.5`. Outputs must satisfy `ET subset TC subset WT`.
 
 Same-runtime repeats under an identical pinned environment are expected to produce byte-identical canonical probability and mask hashes. A mismatch is recorded as `reference_nondeterministic` and disqualifies the reference. Repeats are not averaged.
+
+Every output identity binds the exact volume identity, model identity, window ledger, run, and arm hashes or identifiers. A valid but substituted output is refused before comparison.
 
 Cross-runtime comparisons report:
 
@@ -115,7 +117,7 @@ Without hash-bound proof of subject non-overlap, publications may report only ou
 
 ## Malformed or missing evidence
 
-The verifier rejects missing files, extra files, symlinks, unsafe paths, changed sizes, changed hashes, duplicate JSON keys, noncanonical JSON, unknown schema fields, unsupported versions, nonfinite arrays, invalid masks, and inconsistent receipts. Missing metrics remain unavailable with reasons. They are not imputed. A malformed report cannot support a claim.
+The verifier rejects missing files, extra files, symlinks, unsafe paths, changed sizes, changed hashes, duplicate JSON keys, noncanonical JSON, unknown schema fields, unsupported versions, nonfinite arrays, invalid masks, inconsistent receipts, and any manifest attempt to rewrite the independently pinned PR 1 evidence plan. Missing metrics remain unavailable with reasons. They are not imputed. A malformed report cannot support a claim.
 
 ## Confirmatory expansion
 

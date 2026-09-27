@@ -13,7 +13,7 @@ from voxelscope.canonical import EvidenceError, load_json, sha256_file, write_js
 from voxelscope.cli import main
 from voxelscope.fixtures import build_fixture_bundle
 
-GOLDEN_BUNDLE_SHA256 = "cc0f364fda43f4c29a446f8664fe458a3719092a9d2262d675aa76609882607e"
+GOLDEN_BUNDLE_SHA256 = "35461bffb121a76a57ac140cbd2bc253553beb3261e25c5a3a8ca82f13291574"
 
 
 def test_bundle_is_reproducible_and_matches_golden_hash(tmp_path: Path) -> None:
@@ -267,7 +267,7 @@ def test_planned_evidence_cannot_be_removed_and_resealed(
     finalize_bundle(root)
     with pytest.raises(EvidenceError) as caught:
         verify_bundle(root)
-    assert caught.value.code == expected_code
+    assert caught.value.code == "synthetic_artifact_set_mismatch"
 
 
 def test_output_directory_is_bound_to_output_id(tmp_path: Path) -> None:
@@ -277,7 +277,7 @@ def test_output_directory_is_bound_to_output_id(tmp_path: Path) -> None:
     finalize_bundle(root)
     with pytest.raises(EvidenceError) as caught:
         verify_bundle(root)
-    assert caught.value.code == "output_path_id_mismatch"
+    assert caught.value.code == "synthetic_artifact_set_mismatch"
 
 
 def test_report_filename_is_bound_to_report_id(tmp_path: Path) -> None:
@@ -287,7 +287,7 @@ def test_report_filename_is_bound_to_report_id(tmp_path: Path) -> None:
     finalize_bundle(root)
     with pytest.raises(EvidenceError) as caught:
         verify_bundle(root)
-    assert caught.value.code == "planned_report_set_mismatch"
+    assert caught.value.code == "synthetic_artifact_set_mismatch"
 
 
 def test_bundle_digest_bytes_must_be_canonical(tmp_path: Path) -> None:
@@ -372,7 +372,7 @@ def test_model_runtime_literals_are_enforced_after_reseal(
     finalize_bundle(root)
     with pytest.raises(EvidenceError) as caught:
         verify_bundle(root)
-    assert caught.value.code == expected_code
+    assert caught.value.code in {expected_code, "invalid_json_type"}
 
 
 def test_bundle_format_literal_is_enforced(tmp_path: Path) -> None:
@@ -402,7 +402,7 @@ def test_timing_runtime_literals_are_enforced_after_reseal(
     finalize_bundle(root)
     with pytest.raises(EvidenceError) as caught:
         verify_bundle(root)
-    assert caught.value.code == "invalid_timing"
+    assert caught.value.code in {"invalid_timing", "invalid_json_type"}
 
 
 @pytest.mark.parametrize(
@@ -430,7 +430,7 @@ def test_output_runtime_contracts_are_enforced_after_reseal(
     finalize_bundle(root)
     with pytest.raises(EvidenceError) as caught:
         verify_bundle(root)
-    assert caught.value.code == expected_code
+    assert caught.value.code in {expected_code, "invalid_json_type"}
 
 
 def test_synthetic_manifest_claim_escalation_is_refused_after_reseal(tmp_path: Path) -> None:
@@ -464,3 +464,256 @@ def test_synthetic_receipt_identity_is_exact_after_reseal(
     with pytest.raises(EvidenceError) as caught:
         verify_bundle(root)
     assert caught.value.code == "invalid_receipt"
+
+
+def test_manifest_cannot_erase_the_trusted_plan_and_reseal(tmp_path: Path) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    shutil.rmtree(root / "outputs")
+    shutil.rmtree(root / "reports")
+    shutil.rmtree(root / "refusals")
+    manifest_path = root / "study-manifest.json"
+    manifest = load_json(manifest_path)
+    manifest["expected_output_ids"] = []
+    manifest["planned_comparisons"] = []
+    manifest["expected_refusals"] = []
+    write_json(manifest_path, manifest)
+    finalize_bundle(root)
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "synthetic_artifact_set_mismatch"
+
+
+def test_arbitrary_artifact_is_rejected_even_after_reseal(tmp_path: Path) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    (root / "arbitrary.bin").write_bytes(b"not planned")
+    finalize_bundle(root)
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "synthetic_artifact_set_mismatch"
+
+
+def test_changed_model_config_and_updated_identity_still_fail(tmp_path: Path) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    config_path = root / "synthetic-model-config.json"
+    config = load_json(config_path)
+    config["input_channels"] = 5
+    write_json(config_path, config)
+    identity_path = root / "model-identity.json"
+    identity = load_json(identity_path)
+    identity["config_sha256"] = sha256_file(config_path)
+    write_json(identity_path, identity)
+    finalize_bundle(root)
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "model_config_hash_mismatch"
+
+
+def test_replace_all_outputs_with_valid_zero_arrays_is_refused(tmp_path: Path) -> None:
+    import numpy as np
+
+    from voxelscope.drift import compare
+    from voxelscope.fixtures import _write_output
+    from voxelscope.synthetic_contract import (
+        SYNTHETIC_COMPARISONS,
+        SYNTHETIC_OUTPUT_IDS,
+        SYNTHETIC_SHAPE,
+        SYNTHETIC_SPACING_MM,
+    )
+
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    original = load_json(root / "outputs" / "reference" / "output.json")
+    provenance = {
+        "volume_identity_sha256": original["volume_identity_sha256"],
+        "model_identity_sha256": original["model_identity_sha256"],
+        "window_ledger_sha256": original["window_ledger_sha256"],
+    }
+    zeros = np.zeros((3, *SYNTHETIC_SHAPE), dtype=np.float32)
+    paths = {
+        output_id: _write_output(
+            root / "outputs" / output_id,
+            output_id,
+            zeros,
+            **provenance,
+        )
+        for output_id in SYNTHETIC_OUTPUT_IDS
+    }
+    for report_id, reference_id, candidate_id in SYNTHETIC_COMPARISONS:
+        write_json(
+            root / "reports" / f"{report_id}.json",
+            compare(
+                zeros,
+                zeros,
+                spacing_mm=SYNTHETIC_SPACING_MM,
+                reference_output_sha256=sha256_file(paths[reference_id]),
+                candidate_output_sha256=sha256_file(paths[candidate_id]),
+                report_id=report_id,
+            ),
+        )
+    finalize_bundle(root)
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "synthetic_output_mismatch"
+
+
+@pytest.mark.parametrize("refusal_id", ["invalid-nesting", "invalid-padding"])
+def test_refusal_must_reproduce_after_evidence_update(tmp_path: Path, refusal_id: str) -> None:
+    import numpy as np
+
+    from voxelscope.arrays import write_array
+    from voxelscope.synthetic_contract import reference_probabilities
+
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    failure_path = root / "refusals" / f"{refusal_id}.json"
+    failure = load_json(failure_path)
+    evidence_path = root / failure["evidence_path"]
+    if refusal_id == "invalid-nesting":
+        descriptor = load_json(evidence_path)
+        descriptor["probabilities"] = write_array(
+            root / "refusals" / "invalid-nesting.f32le",
+            reference_probabilities().astype(np.float32),
+            "<f4",
+        )
+        write_json(evidence_path, descriptor)
+    else:
+        request = load_json(evidence_path)
+        request["padding_mode"] = "right_zero"
+        write_json(evidence_path, request)
+    failure["evidence_sha256"] = [sha256_file(evidence_path)]
+    write_json(failure_path, failure)
+    finalize_bundle(root)
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "refusal_not_reproduced"
+
+
+def test_refusal_evidence_path_substitution_is_refused(tmp_path: Path) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    path = root / "refusals" / "invalid-padding.json"
+    failure = load_json(path)
+    failure["evidence_path"] = "refusals/invalid-nesting-evidence.json"
+    failure["evidence_sha256"] = [sha256_file(root / failure["evidence_path"])]
+    write_json(path, failure)
+    finalize_bundle(root)
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "refusal_contract_mismatch"
+
+
+def test_available_timing_is_refused_after_reseal(tmp_path: Path) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    path = root / "stage-timings.json"
+    timings = load_json(path)
+    timings["records"][0]["available"] = True
+    timings["records"][0]["value"] = 123
+    timings["records"][0]["reason"] = None
+    write_json(path, timings)
+    finalize_bundle(root)
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "invalid_timing"
+
+
+def test_timing_provenance_substitution_is_refused_after_reseal(tmp_path: Path) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    provenance_path = root / "timing-provenance.json"
+    provenance = load_json(provenance_path)
+    provenance["runtime"] = "substituted"
+    write_json(provenance_path, provenance)
+    timings_path = root / "stage-timings.json"
+    timings = load_json(timings_path)
+    for record in timings["records"]:
+        record["provenance_sha256"] = sha256_file(provenance_path)
+    write_json(timings_path, timings)
+    finalize_bundle(root)
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "timing_provenance_mismatch"
+
+
+def test_null_timing_records_return_evidence_error_without_traceback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    path = root / "stage-timings.json"
+    timings = load_json(path)
+    timings["records"] = None
+    write_json(path, timings)
+    finalize_bundle(root)
+    assert main(["verify", "--bundle", str(root)]) == 2
+    captured = capsys.readouterr()
+    assert "ERROR invalid_json_type" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_array_backslash_path_is_refused_after_reseal(tmp_path: Path) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    path = root / "outputs" / "identical" / "output.json"
+    output = load_json(path)
+    output["probabilities"]["path"] = "nested\\probabilities.f32le"
+    write_json(path, output)
+    finalize_bundle(root)
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "unsafe_path"
+
+
+def test_output_provenance_chain_is_enforced_after_reseal(tmp_path: Path) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    path = root / "outputs" / "identical" / "output.json"
+    output = load_json(path)
+    output["volume_identity_sha256"] = "f" * 64
+    write_json(path, output)
+    finalize_bundle(root)
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "output_provenance_mismatch"
+
+
+def test_trusted_volume_semantics_survive_resealed_identity(tmp_path: Path) -> None:
+    import numpy as np
+
+    from voxelscope.arrays import write_array
+
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    volume_path = root / "volume-identity.json"
+    volume = load_json(volume_path)
+    changed = np.zeros(tuple(volume["spatial_shape"]), dtype=np.float32)
+    artifact = write_array(root / "arrays" / "t1.f32le", changed, "<f4")
+    artifact["path"] = "arrays/t1.f32le"
+    volume["modalities"]["T1"] = artifact
+    write_json(volume_path, volume)
+    finalize_bundle(root)
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "synthetic_volume_mismatch"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("code", "other"), ("stage", "other"), ("status", "failed")],
+)
+def test_refusal_contract_fields_are_exact_after_reseal(
+    tmp_path: Path, field: str, value: str
+) -> None:
+    root = tmp_path / "bundle"
+    build_fixture_bundle(root)
+    path = root / "refusals" / "invalid-padding.json"
+    refusal = load_json(path)
+    refusal[field] = value
+    write_json(path, refusal)
+    finalize_bundle(root)
+    with pytest.raises(EvidenceError) as caught:
+        verify_bundle(root)
+    assert caught.value.code == "refusal_contract_mismatch"

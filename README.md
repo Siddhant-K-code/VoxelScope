@@ -30,6 +30,7 @@ src/voxelscope/
   canonical.py   Canonical JSON, path safety, and SHA-256
   arrays.py      Canonical little-endian array artifacts
   records.py     Versioned typed evidence contracts
+  synthetic_contract.py  Trusted PR 1 fixture identities and evidence plan
   windows.py     Sliding-window ledger, padding, blend map, and coverage oracle
   drift.py       Nested-region validation and boundary-drift metrics
   bundle.py      Closed bundle indexing and semantic verification
@@ -67,7 +68,7 @@ voxelscope drift compare \
 
 ## Evidence model
 
-A generated bundle contains synthetic modalities, volume and model identities, a deterministic window ledger, output identities, scenario drift reports, explicit refusal records, unavailable timing records, a run receipt, and a readable summary. `bundle.json` indexes every payload file. `bundle.sha256` binds that index. The study manifest also fixes the exact expected output IDs, report comparisons, and refusal IDs. Verification rejects missing, extra, changed, noncanonical, path-traversing, or symlinked evidence.
+A generated bundle contains synthetic modalities, volume and model identities, a deterministic window ledger, output identities, scenario drift reports, explicit refusal records, unavailable timing records with hash-bound provenance, a run receipt, and a readable summary. Every output identity binds the exact volume identity, model identity, window ledger, run, and arm. `bundle.json` indexes every payload file. `bundle.sha256` binds that index. The study manifest records the expected output IDs, report comparisons, and refusal IDs, while the verifier independently pins the complete PR 1 plan and required artifact paths in trusted code. Verification rejects missing, extra, changed, noncanonical, path-traversing, or symlinked evidence.
 
 Same-runtime deterministic repeats are expected to have byte-identical canonical probability and mask hashes. Cross-runtime outputs may differ, so VoxelScope records exact probability changes, threshold flips, mask changes, region Dice, volume change, component changes, and physical boundary distances. PR 1 sets no acceptance threshold for real segmentation drift.
 

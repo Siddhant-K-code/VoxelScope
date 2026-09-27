@@ -9,7 +9,15 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from .canonical import EvidenceError, canonical_json_bytes, sha256_bytes, sha256_file
+from .canonical import (
+    EvidenceError,
+    canonical_json_bytes,
+    ensure_no_symlink,
+    safe_relative_path,
+    sha256_bytes,
+    sha256_file,
+)
+from .records import ArrayArtifact
 
 _ALLOWED = {"<f4", "<f8", "|u1"}
 
@@ -50,30 +58,26 @@ def write_array(path: Path, value: npt.ArrayLike, dtype: str | None = None) -> d
     }
 
 
-def read_array(base: Path, identity: dict[str, Any]) -> np.ndarray[Any, Any]:
-    required = {"content_sha256", "dtype", "file_sha256", "path", "shape", "size_bytes"}
-    if set(identity) != required:
-        raise EvidenceError("invalid_array_identity", "array identity fields differ")
-    dtype = str(identity["dtype"])
-    if dtype not in _ALLOWED:
-        raise EvidenceError("unsupported_array_dtype", dtype)
-    shape = tuple(int(item) for item in identity["shape"])
-    if not shape or any(item <= 0 for item in shape):
-        raise EvidenceError("invalid_array_shape", "shape values must be positive")
-    relative = Path(str(identity["path"]))
-    if relative.is_absolute() or ".." in relative.parts:
-        raise EvidenceError("unsafe_path", "array path escapes descriptor directory")
-    path = base / relative
-    if path.is_symlink() or not path.is_file():
-        raise EvidenceError("missing_array", str(relative))
-    size = int(np.prod(shape, dtype=np.int64)) * np.dtype(dtype).itemsize
-    if int(identity["size_bytes"]) != size or path.stat().st_size != size:
-        raise EvidenceError("array_size_mismatch", str(relative))
-    if sha256_file(path) != identity["file_sha256"]:
-        raise EvidenceError("array_file_hash_mismatch", str(relative))
-    array = np.frombuffer(path.read_bytes(), dtype=np.dtype(dtype)).reshape(shape).copy()
-    if array_content_sha256(array) != identity["content_sha256"]:
-        raise EvidenceError("array_content_hash_mismatch", str(relative))
+def read_array(base: Path, identity: dict[str, Any] | ArrayArtifact) -> np.ndarray[Any, Any]:
+    artifact = (
+        identity if isinstance(identity, ArrayArtifact) else ArrayArtifact.from_dict(identity)
+    )
+    relative = safe_relative_path(artifact.path)
+    path = ensure_no_symlink(base, relative)
+    if not path.is_file():
+        raise EvidenceError("missing_array", artifact.path)
+    size = int(np.prod(artifact.shape, dtype=np.int64)) * np.dtype(artifact.dtype).itemsize
+    if artifact.size_bytes != size or path.stat().st_size != size:
+        raise EvidenceError("array_size_mismatch", artifact.path)
+    if sha256_file(path) != artifact.file_sha256:
+        raise EvidenceError("array_file_hash_mismatch", artifact.path)
+    array = (
+        np.frombuffer(path.read_bytes(), dtype=np.dtype(artifact.dtype))
+        .reshape(artifact.shape)
+        .copy()
+    )
+    if array_content_sha256(array) != artifact.content_sha256:
+        raise EvidenceError("array_content_hash_mismatch", artifact.path)
     if array.dtype.kind == "f" and not bool(np.isfinite(array).all()):
-        raise EvidenceError("nonfinite_array", str(relative))
+        raise EvidenceError("nonfinite_array", artifact.path)
     return array

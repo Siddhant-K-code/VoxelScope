@@ -8,7 +8,13 @@ import pytest
 
 from voxelscope.canonical import EvidenceError
 from voxelscope.drift import compare, threshold_masks, validate_nested_masks
-from voxelscope.fixtures import SPACING_MM, reference_probabilities, scenario_probabilities
+from voxelscope.synthetic_contract import (
+    SYNTHETIC_SPACING_MM as SPACING_MM,
+)
+from voxelscope.synthetic_contract import (
+    reference_probabilities,
+    scenario_probabilities,
+)
 
 _HASH_A = "a" * 64
 _HASH_B = "b" * 64

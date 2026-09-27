@@ -4,16 +4,25 @@
 from __future__ import annotations
 
 import argparse
+import os
+import shutil
 import sys
+import tempfile
 from collections.abc import Sequence
-from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
 
 from .arrays import read_array, write_array
 from .bundle import load_output, verify_bundle
-from .canonical import EvidenceError, load_json, sha256_file, write_json
+from .canonical import (
+    EvidenceError,
+    ensure_no_symlink,
+    load_json,
+    safe_relative_path,
+    sha256_file,
+    write_json,
+)
 from .drift import compare
 from .fixtures import build_fixture_bundle
 from .records import StudyManifest, VolumeIdentity
@@ -52,27 +61,37 @@ def _parser() -> argparse.ArgumentParser:
 def _windows_build(manifest_path: Path, output: Path) -> str:
     if output.exists():
         raise EvidenceError("output_exists", str(output))
+    if manifest_path.is_symlink() or not manifest_path.is_file():
+        raise EvidenceError("unsafe_path", "manifest must be a regular file")
+    evidence_root = manifest_path.parent
     manifest_data = load_json(manifest_path)
     if not isinstance(manifest_data, dict):
         raise EvidenceError("invalid_study_manifest", "manifest must be an object")
     manifest = StudyManifest.from_dict(manifest_data)
-    volume_path = manifest_path.parent / manifest.volume_identity_path
+    volume_path = ensure_no_symlink(
+        evidence_root, safe_relative_path(manifest.volume_identity_path)
+    )
+    if not volume_path.is_file():
+        raise EvidenceError("missing_volume_identity", manifest.volume_identity_path)
     volume_data = load_json(volume_path)
     if not isinstance(volume_data, dict):
         raise EvidenceError("invalid_volume_identity", "volume identity must be an object")
     volume = VolumeIdentity.from_dict(volume_data)
     modalities = np.stack(
-        [
-            read_array(volume_path.parent, asdict(volume.modalities[name]))
-            for name in volume.modality_order
-        ]
+        [read_array(volume_path.parent, volume.modalities[name]) for name in volume.modality_order]
     )
     evidence, weights = build_window_evidence(modalities, manifest.window_config)
-    output.mkdir(parents=True)
-    weight_artifact = write_array(output / "weight-map.f64le", weights, "<f8")
-    ledger = evidence.to_dict()
-    ledger["weight_artifact"] = weight_artifact
-    write_json(output / "window-ledger.json", ledger)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix=f".{output.name}.tmp-", dir=output.parent))
+    try:
+        weight_artifact = write_array(temporary / "weight-map.f64le", weights, "<f8")
+        ledger = evidence.to_dict()
+        ledger["weight_artifact"] = weight_artifact
+        write_json(temporary / "window-ledger.json", ledger)
+        os.replace(temporary, output)
+    finally:
+        if temporary.exists():
+            shutil.rmtree(temporary)
     return evidence.coordinate_sha256
 
 
@@ -94,8 +113,17 @@ def _drift_compare(reference_path: Path, candidate_path: Path, output: Path) -> 
         report_id=f"{reference_identity.output_id}-vs-{candidate_identity.output_id}",
         threshold=reference_identity.threshold,
     )
-    write_json(output, report)
-    return sha256_file(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{output.name}.tmp-", dir=output.parent)
+    os.close(descriptor)
+    temporary = Path(temporary_name)
+    try:
+        write_json(temporary, report)
+        report_sha256 = sha256_file(temporary)
+        os.replace(temporary, output)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return report_sha256
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -115,6 +143,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise EvidenceError("invalid_command", "unsupported command")
     except EvidenceError as exc:
         print(f"ERROR {exc.code}: {exc}", file=sys.stderr)
+        return 2
+    except (TypeError, KeyError, ValueError) as exc:
+        print(f"ERROR malformed_evidence: {exc}", file=sys.stderr)
         return 2
     except OSError as exc:
         print(f"ERROR io_error: {exc}", file=sys.stderr)

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
@@ -23,22 +24,70 @@ STAGES = (
 )
 
 
-def strict_fields(data: dict[str, Any], expected: set[str], name: str) -> None:
-    if set(data) != expected:
+def require_object(value: Any, name: str) -> dict[str, Any]:
+    if type(value) is not dict:
+        raise EvidenceError("invalid_json_type", f"{name} must be an object")
+    return value
+
+
+def require_list(value: Any, name: str) -> list[Any]:
+    if type(value) is not list:
+        raise EvidenceError("invalid_json_type", f"{name} must be an array")
+    return value
+
+
+def require_string(value: Any, name: str, *, nonempty: bool = True) -> str:
+    if type(value) is not str or (nonempty and not value):
+        raise EvidenceError("invalid_json_type", f"{name} must be a string")
+    return value
+
+
+def require_bool(value: Any, name: str) -> bool:
+    if type(value) is not bool:
+        raise EvidenceError("invalid_json_type", f"{name} must be a boolean")
+    return value
+
+
+def require_int(value: Any, name: str) -> int:
+    if type(value) is not int:
+        raise EvidenceError("invalid_json_type", f"{name} must be an integer")
+    return value
+
+
+def require_number(value: Any, name: str) -> float:
+    if type(value) not in {int, float}:
+        raise EvidenceError("invalid_json_type", f"{name} must be a number")
+    result = float(value)
+    if not math.isfinite(result):
+        raise EvidenceError("invalid_json_type", f"{name} must be finite")
+    return result
+
+
+def strict_fields(data: Any, expected: set[str], name: str) -> dict[str, Any]:
+    value = require_object(data, name)
+    if set(value) != expected:
         raise EvidenceError(
             "invalid_record",
-            f"{name} fields differ: missing={sorted(expected - set(data))}, "
-            f"extra={sorted(set(data) - expected)}",
+            f"{name} fields differ: missing={sorted(expected - set(value))}, "
+            f"extra={sorted(set(value) - expected)}",
         )
+    return value
 
 
 def triple_int(value: Any, name: str, *, positive: bool = True) -> tuple[int, int, int]:
-    if not isinstance(value, (list, tuple)) or len(value) != 3:
-        raise EvidenceError("invalid_record", f"{name} must contain three integers")
-    result = tuple(int(item) for item in value)
+    items = require_list(value, name) if type(value) is list else value
+    if type(items) is not tuple or len(items) != 3:
+        if type(value) is not list or len(value) != 3:
+            raise EvidenceError("invalid_record", f"{name} must contain three integers")
+        items = value
+    result = (
+        require_int(items[0], f"{name}[0]"),
+        require_int(items[1], f"{name}[1]"),
+        require_int(items[2], f"{name}[2]"),
+    )
     if positive and any(item <= 0 for item in result):
         raise EvidenceError("invalid_record", f"{name} must be positive")
-    return result  # type: ignore[return-value]
+    return result
 
 
 @dataclass(frozen=True)
@@ -52,8 +101,11 @@ class OverlapRatio:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> OverlapRatio:
-        strict_fields(data, {"denominator", "numerator"}, "OverlapRatio")
-        return cls(int(data["numerator"]), int(data["denominator"]))
+        data = strict_fields(data, {"denominator", "numerator"}, "OverlapRatio")
+        return cls(
+            require_int(data["numerator"], "numerator"),
+            require_int(data["denominator"], "denominator"),
+        )
 
 
 @dataclass(frozen=True)
@@ -82,7 +134,7 @@ class WindowConfig:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> WindowConfig:
-        strict_fields(
+        data = strict_fields(
             data,
             {
                 "blend_mode",
@@ -95,18 +147,26 @@ class WindowConfig:
             },
             "WindowConfig",
         )
-        overlap = tuple(OverlapRatio.from_dict(item) for item in data["overlap"])
+        overlap_items = require_list(data["overlap"], "overlap")
+        overlap = tuple(
+            OverlapRatio.from_dict(require_object(item, "overlap item")) for item in overlap_items
+        )
         if len(overlap) != 3:
             raise EvidenceError("invalid_overlap", "three overlap ratios are required")
-        sigma = data["sigma_scale"]
+        sigma_value = data["sigma_scale"]
+        sigma = (
+            OverlapRatio.from_dict(require_object(sigma_value, "sigma_scale"))
+            if sigma_value is not None
+            else None
+        )
         return cls(
             triple_int(data["volume_shape"], "volume_shape"),
             triple_int(data["roi"], "roi"),
             overlap,
-            str(data["blend_mode"]),  # type: ignore[arg-type]
-            OverlapRatio.from_dict(sigma) if sigma is not None else None,
-            str(data["padding_mode"]),  # type: ignore[arg-type]
-            str(data["traversal_order"]),  # type: ignore[arg-type]
+            require_string(data["blend_mode"], "blend_mode"),  # type: ignore[arg-type]
+            sigma,
+            require_string(data["padding_mode"], "padding_mode"),  # type: ignore[arg-type]
+            require_string(data["traversal_order"], "traversal_order"),  # type: ignore[arg-type]
         )
 
 
@@ -120,8 +180,7 @@ class ArrayArtifact:
     content_sha256: str
 
     def __post_init__(self) -> None:
-        if not self.path or self.path.startswith("/") or ".." in self.path.split("/"):
-            raise EvidenceError("unsafe_path", self.path)
+        safe_relative_path(self.path)
         if self.dtype not in {"<f4", "<f8", "|u1"}:
             raise EvidenceError("unsupported_array_dtype", self.dtype)
         if not self.shape or any(value <= 0 for value in self.shape) or self.size_bytes <= 0:
@@ -131,18 +190,19 @@ class ArrayArtifact:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ArrayArtifact:
-        strict_fields(
+        data = strict_fields(
             data,
             {"content_sha256", "dtype", "file_sha256", "path", "shape", "size_bytes"},
             "ArrayArtifact",
         )
+        shape = require_list(data["shape"], "shape")
         return cls(
-            str(data["path"]),
-            str(data["dtype"]),
-            tuple(int(value) for value in data["shape"]),
-            int(data["size_bytes"]),
-            str(data["file_sha256"]),
-            str(data["content_sha256"]),
+            require_string(data["path"], "path"),
+            require_string(data["dtype"], "dtype"),
+            tuple(require_int(value, "shape item") for value in shape),
+            require_int(data["size_bytes"], "size_bytes"),
+            require_string(data["file_sha256"], "file_sha256"),
+            require_string(data["content_sha256"], "content_sha256"),
         )
 
 
@@ -192,8 +252,13 @@ class ThresholdConfig:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ThresholdConfig:
-        strict_fields(data, {"comparator", "values", "version"}, "ThresholdConfig")
-        return cls(str(data["comparator"]), dict(data["values"]), str(data["version"]))  # type: ignore[arg-type]
+        data = strict_fields(data, {"comparator", "values", "version"}, "ThresholdConfig")
+        values = require_object(data["values"], "threshold values")
+        return cls(
+            require_string(data["comparator"], "comparator"),  # type: ignore[arg-type]
+            {key: require_number(value, f"threshold {key}") for key, value in values.items()},
+            require_string(data["version"], "version"),  # type: ignore[arg-type]
+        )
 
 
 @dataclass(frozen=True)
@@ -242,7 +307,7 @@ class VolumeIdentity:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> VolumeIdentity:
-        strict_fields(
+        data = strict_fields(
             data,
             {
                 "affine",
@@ -256,15 +321,28 @@ class VolumeIdentity:
             },
             "VolumeIdentity",
         )
+        modality_order = require_list(data["modality_order"], "modality_order")
+        spacing = require_list(data["spacing_mm"], "spacing_mm")
+        if len(modality_order) != 4 or len(spacing) != 3:
+            raise EvidenceError(
+                "invalid_volume_identity", "modality order or spacing length differs"
+            )
+        modalities = require_object(data["modalities"], "modalities")
+        label = data["label_sha256"]
+        if label is not None:
+            label = require_string(label, "label_sha256")
         return cls(
-            str(data["schema_version"]),
-            str(data["volume_id"]),
-            tuple(data["modality_order"]),
+            require_string(data["schema_version"], "schema_version"),
+            require_string(data["volume_id"], "volume_id"),
+            tuple(require_string(item, "modality") for item in modality_order),  # type: ignore[arg-type]
             triple_int(data["spatial_shape"], "spatial_shape"),
-            tuple(float(v) for v in data["spacing_mm"]),  # type: ignore[arg-type]
-            ArrayArtifact.from_dict(data["affine"]),
-            {key: ArrayArtifact.from_dict(value) for key, value in data["modalities"].items()},
-            data["label_sha256"],
+            tuple(require_number(item, "spacing item") for item in spacing),  # type: ignore[arg-type]
+            ArrayArtifact.from_dict(require_object(data["affine"], "affine")),
+            {
+                key: ArrayArtifact.from_dict(require_object(value, f"modality {key}"))
+                for key, value in modalities.items()
+            },
+            label,
         )
 
 
@@ -301,7 +379,7 @@ class ModelBundleIdentity:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ModelBundleIdentity:
-        strict_fields(
+        data = strict_fields(
             data,
             {
                 "config_path",
@@ -317,18 +395,22 @@ class ModelBundleIdentity:
             },
             "ModelBundleIdentity",
         )
+        weights_path = data["weights_path"]
+        weights_sha256 = data["weights_sha256"]
         return cls(
-            schema_version=str(data["schema_version"]),
-            name=str(data["name"]),
-            version=str(data["version"]),
-            model_kind=str(data["model_kind"]),  # type: ignore[arg-type]
-            source=str(data["source"]),
-            license=str(data["license"]),
-            config_path=str(data["config_path"]),
-            config_sha256=str(data["config_sha256"]),
-            weights_path=None if data["weights_path"] is None else str(data["weights_path"]),
+            schema_version=require_string(data["schema_version"], "schema_version"),
+            name=require_string(data["name"], "name"),
+            version=require_string(data["version"], "version"),
+            model_kind=require_string(data["model_kind"], "model_kind"),  # type: ignore[arg-type]
+            source=require_string(data["source"], "source"),
+            license=require_string(data["license"], "license"),
+            config_path=require_string(data["config_path"], "config_path"),
+            config_sha256=require_string(data["config_sha256"], "config_sha256"),
+            weights_path=(
+                None if weights_path is None else require_string(weights_path, "weights_path")
+            ),
             weights_sha256=(
-                None if data["weights_sha256"] is None else str(data["weights_sha256"])
+                None if weights_sha256 is None else require_string(weights_sha256, "weights_sha256")
             ),
         )
 
@@ -340,6 +422,7 @@ class StageTimingRecord:
     value: int | None
     unit: Literal["ns"]
     clock: str
+    provenance_path: str
     provenance_sha256: str
     reason: str | None
 
@@ -351,11 +434,43 @@ class StageTimingRecord:
             or self.available != (self.value is not None)
         ):
             raise EvidenceError("invalid_timing", self.stage)
-        if self.value is not None and self.value < 0:
+        safe_relative_path(self.provenance_path)
+        if self.value is not None and (type(self.value) is not int or self.value < 0):
+            raise EvidenceError("invalid_timing", self.stage)
+        if type(self.available) is not bool:
             raise EvidenceError("invalid_timing", self.stage)
         if self.available == (self.reason is not None):
             raise EvidenceError("invalid_timing", self.stage)
         require_sha256(self.provenance_sha256)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> StageTimingRecord:
+        data = strict_fields(
+            data,
+            {
+                "available",
+                "clock",
+                "provenance_path",
+                "provenance_sha256",
+                "reason",
+                "stage",
+                "unit",
+                "value",
+            },
+            "StageTimingRecord",
+        )
+        value = data["value"]
+        reason = data["reason"]
+        return cls(
+            stage=require_string(data["stage"], "stage"),
+            available=require_bool(data["available"], "available"),
+            value=None if value is None else require_int(value, "value"),
+            unit=require_string(data["unit"], "unit"),  # type: ignore[arg-type]
+            clock=require_string(data["clock"], "clock"),
+            provenance_path=require_string(data["provenance_path"], "provenance_path"),
+            provenance_sha256=require_string(data["provenance_sha256"], "provenance_sha256"),
+            reason=None if reason is None else require_string(reason, "reason"),
+        )
 
 
 @dataclass(frozen=True)
@@ -368,6 +483,11 @@ class OutputIdentity:
     masks: dict[str, ArrayArtifact]
     threshold: ThresholdConfig
     components: dict[str, ComponentSummary]
+    volume_identity_sha256: str
+    model_identity_sha256: str
+    window_ledger_sha256: str
+    run_id: str
+    arm_id: str
 
     def __post_init__(self) -> None:
         if (
@@ -387,40 +507,71 @@ class OutputIdentity:
         for item in self.masks.values():
             if item.dtype != "|u1" or item.shape != self.probabilities.shape[1:]:
                 raise EvidenceError("invalid_mask_artifact", item.path)
+        require_sha256(self.volume_identity_sha256, "volume_identity_sha256")
+        require_sha256(self.model_identity_sha256, "model_identity_sha256")
+        require_sha256(self.window_ledger_sha256, "window_ledger_sha256")
+        if not self.run_id or not self.arm_id:
+            raise EvidenceError("invalid_output_provenance", self.output_id)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> OutputIdentity:
-        strict_fields(
+        data = strict_fields(
             data,
             {
+                "arm_id",
                 "channel_order",
                 "components",
                 "masks",
+                "model_identity_sha256",
                 "output_id",
                 "probabilities",
+                "run_id",
                 "schema_version",
                 "spacing_mm",
                 "threshold",
+                "volume_identity_sha256",
+                "window_ledger_sha256",
             },
             "OutputIdentity",
         )
-        components = {
-            key: ComponentSummary(
-                int(value["count"]),
-                tuple(int(item) for item in value["voxel_sizes_descending"]),
-                int(value["connectivity"]),  # type: ignore[arg-type]
+        channels = require_list(data["channel_order"], "channel_order")
+        spacing = require_list(data["spacing_mm"], "spacing_mm")
+        if len(channels) != 3 or len(spacing) != 3:
+            raise EvidenceError(
+                "invalid_output_identity", "channel order or spacing length differs"
             )
-            for key, value in data["components"].items()
-        }
+        components_data = require_object(data["components"], "components")
+        components: dict[str, ComponentSummary] = {}
+        for key, raw_value in components_data.items():
+            value = strict_fields(
+                raw_value,
+                {"connectivity", "count", "voxel_sizes_descending"},
+                f"ComponentSummary {key}",
+            )
+            sizes = require_list(value["voxel_sizes_descending"], "voxel_sizes_descending")
+            components[key] = ComponentSummary(
+                require_int(value["count"], "component count"),
+                tuple(require_int(item, "component size") for item in sizes),
+                require_int(value["connectivity"], "connectivity"),  # type: ignore[arg-type]
+            )
+        masks_data = require_object(data["masks"], "masks")
         return cls(
-            str(data["schema_version"]),
-            str(data["output_id"]),
-            tuple(data["channel_order"]),
-            tuple(float(v) for v in data["spacing_mm"]),  # type: ignore[arg-type]
-            ArrayArtifact.from_dict(data["probabilities"]),
-            {key: ArrayArtifact.from_dict(value) for key, value in data["masks"].items()},
-            ThresholdConfig.from_dict(data["threshold"]),
+            require_string(data["schema_version"], "schema_version"),
+            require_string(data["output_id"], "output_id"),
+            tuple(require_string(item, "channel") for item in channels),  # type: ignore[arg-type]
+            tuple(require_number(item, "spacing item") for item in spacing),  # type: ignore[arg-type]
+            ArrayArtifact.from_dict(require_object(data["probabilities"], "probabilities")),
+            {
+                key: ArrayArtifact.from_dict(require_object(value, f"mask {key}"))
+                for key, value in masks_data.items()
+            },
+            ThresholdConfig.from_dict(require_object(data["threshold"], "threshold")),
             components,
+            require_string(data["volume_identity_sha256"], "volume_identity_sha256"),
+            require_string(data["model_identity_sha256"], "model_identity_sha256"),
+            require_string(data["window_ledger_sha256"], "window_ledger_sha256"),
+            require_string(data["run_id"], "run_id"),
+            require_string(data["arm_id"], "arm_id"),
         )
 
 
@@ -436,15 +587,15 @@ class PlannedComparison:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PlannedComparison:
-        strict_fields(
+        data = strict_fields(
             data,
             {"candidate_output_id", "reference_output_id", "report_id"},
             "PlannedComparison",
         )
         return cls(
-            str(data["report_id"]),
-            str(data["reference_output_id"]),
-            str(data["candidate_output_id"]),
+            require_string(data["report_id"], "report_id"),
+            require_string(data["reference_output_id"], "reference_output_id"),
+            require_string(data["candidate_output_id"], "candidate_output_id"),
         )
 
 
@@ -452,15 +603,29 @@ class PlannedComparison:
 class ExpectedRefusal:
     refusal_id: str
     code: str
+    status: Literal["refused"]
+    stage: str
+    evidence_path: str
 
     def __post_init__(self) -> None:
-        if not self.refusal_id or not self.code:
-            raise EvidenceError("invalid_expected_refusal", "refusal ID and code cannot be empty")
+        if not all((self.refusal_id, self.code, self.stage)) or self.status != "refused":
+            raise EvidenceError("invalid_expected_refusal", "invalid expected refusal")
+        safe_relative_path(self.evidence_path)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ExpectedRefusal:
-        strict_fields(data, {"code", "refusal_id"}, "ExpectedRefusal")
-        return cls(str(data["refusal_id"]), str(data["code"]))
+        data = strict_fields(
+            data,
+            {"code", "evidence_path", "refusal_id", "stage", "status"},
+            "ExpectedRefusal",
+        )
+        return cls(
+            require_string(data["refusal_id"], "refusal_id"),
+            require_string(data["code"], "code"),
+            require_string(data["status"], "status"),  # type: ignore[arg-type]
+            require_string(data["stage"], "stage"),
+            require_string(data["evidence_path"], "evidence_path"),
+        )
 
 
 @dataclass(frozen=True)
@@ -485,6 +650,8 @@ class StudyManifest:
             raise EvidenceError("invalid_study_manifest", self.study_id)
         if not self.research_only:
             raise EvidenceError("research_only_required", self.study_id)
+        safe_relative_path(self.volume_identity_path)
+        safe_relative_path(self.model_identity_path)
         if self.claim_scope not in {"output_preservation", "diagnostic_accuracy"}:
             raise EvidenceError("invalid_claim_scope", str(self.claim_scope))
         if self.lineage_status not in {"unresolved", "proven_subject_nonoverlap"}:
@@ -526,7 +693,7 @@ class StudyManifest:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> StudyManifest:
-        strict_fields(
+        data = strict_fields(
             data,
             {
                 "claim_scope",
@@ -546,20 +713,30 @@ class StudyManifest:
             },
             "StudyManifest",
         )
+        lineage = require_list(data["lineage_evidence_sha256"], "lineage_evidence_sha256")
+        output_ids = require_list(data["expected_output_ids"], "expected_output_ids")
+        comparisons = require_list(data["planned_comparisons"], "planned_comparisons")
+        refusals = require_list(data["expected_refusals"], "expected_refusals")
         return cls(
-            str(data["schema_version"]),
-            str(data["study_id"]),
-            bool(data["research_only"]),
-            str(data["claim_scope"]),  # type: ignore[arg-type]
-            str(data["lineage_status"]),  # type: ignore[arg-type]
-            tuple(data["lineage_evidence_sha256"]),
-            bool(data["diagnostic_accuracy_allowed"]),
-            str(data["volume_identity_path"]),
-            str(data["model_identity_path"]),
-            WindowConfig.from_dict(data["window_config"]),
-            tuple(str(item) for item in data["expected_output_ids"]),
-            tuple(PlannedComparison.from_dict(item) for item in data["planned_comparisons"]),
-            tuple(ExpectedRefusal.from_dict(item) for item in data["expected_refusals"]),
+            require_string(data["schema_version"], "schema_version"),
+            require_string(data["study_id"], "study_id"),
+            require_bool(data["research_only"], "research_only"),
+            require_string(data["claim_scope"], "claim_scope"),  # type: ignore[arg-type]
+            require_string(data["lineage_status"], "lineage_status"),  # type: ignore[arg-type]
+            tuple(require_string(item, "lineage digest") for item in lineage),
+            require_bool(data["diagnostic_accuracy_allowed"], "diagnostic_accuracy_allowed"),
+            require_string(data["volume_identity_path"], "volume_identity_path"),
+            require_string(data["model_identity_path"], "model_identity_path"),
+            WindowConfig.from_dict(require_object(data["window_config"], "window_config")),
+            tuple(require_string(item, "output ID") for item in output_ids),
+            tuple(
+                PlannedComparison.from_dict(require_object(item, "planned comparison"))
+                for item in comparisons
+            ),
+            tuple(
+                ExpectedRefusal.from_dict(require_object(item, "expected refusal"))
+                for item in refusals
+            ),
             data["drift_acceptance_thresholds"],
         )
 
@@ -614,6 +791,7 @@ class FailureState:
     code: str
     stage: str
     message: str
+    evidence_path: str
     evidence_sha256: tuple[str, ...]
 
     def __post_init__(self) -> None:
@@ -623,8 +801,37 @@ class FailureState:
             raise EvidenceError("invalid_failure", self.code)
         if self.status not in {"failed", "refused"}:
             raise EvidenceError("invalid_failure", "unknown failure status")
+        safe_relative_path(self.evidence_path)
         for digest in self.evidence_sha256:
             require_sha256(digest)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> FailureState:
+        data = strict_fields(
+            data,
+            {
+                "code",
+                "evidence_path",
+                "evidence_sha256",
+                "message",
+                "refusal_id",
+                "schema_version",
+                "stage",
+                "status",
+            },
+            "FailureState",
+        )
+        digests = require_list(data["evidence_sha256"], "evidence_sha256")
+        return cls(
+            require_string(data["schema_version"], "schema_version"),
+            require_string(data["refusal_id"], "refusal_id"),
+            require_string(data["status"], "status"),  # type: ignore[arg-type]
+            require_string(data["code"], "code"),
+            require_string(data["stage"], "stage"),
+            require_string(data["message"], "message"),
+            require_string(data["evidence_path"], "evidence_path"),
+            tuple(require_string(item, "evidence digest") for item in digests),
+        )
 
 
 @dataclass(frozen=True)
@@ -658,6 +865,40 @@ class RunReceipt:
         if self.status != "succeeded" and self.failure_path is None:
             raise EvidenceError("invalid_receipt", "failure or refusal requires a failure path")
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> RunReceipt:
+        data = strict_fields(
+            data,
+            {
+                "command",
+                "failure_path",
+                "gpu_used",
+                "medical_data_used",
+                "model_weights_used",
+                "offline",
+                "run_id",
+                "schema_version",
+                "status",
+                "synthetic_only",
+                "timings_path",
+            },
+            "RunReceipt",
+        )
+        failure_path = data["failure_path"]
+        return cls(
+            require_string(data["schema_version"], "schema_version"),
+            require_string(data["run_id"], "run_id"),
+            require_string(data["status"], "status"),  # type: ignore[arg-type]
+            require_string(data["command"], "command"),
+            require_bool(data["offline"], "offline"),
+            require_bool(data["synthetic_only"], "synthetic_only"),
+            require_bool(data["gpu_used"], "gpu_used"),
+            require_bool(data["medical_data_used"], "medical_data_used"),
+            require_bool(data["model_weights_used"], "model_weights_used"),
+            require_string(data["timings_path"], "timings_path"),
+            None if failure_path is None else require_string(failure_path, "failure_path"),
+        )
+
 
 @dataclass(frozen=True)
 class BundleArtifact:
@@ -667,11 +908,20 @@ class BundleArtifact:
     media_type: str
 
     def __post_init__(self) -> None:
-        if not self.path or self.path.startswith("/") or ".." in self.path.split("/"):
-            raise EvidenceError("unsafe_path", self.path)
+        safe_relative_path(self.path)
         if self.size_bytes < 0 or not self.media_type:
             raise EvidenceError("invalid_bundle_artifact", self.path)
         require_sha256(self.sha256)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> BundleArtifact:
+        data = strict_fields(data, {"media_type", "path", "sha256", "size_bytes"}, "BundleArtifact")
+        return cls(
+            require_string(data["path"], "path"),
+            require_int(data["size_bytes"], "size_bytes"),
+            require_string(data["sha256"], "sha256"),
+            require_string(data["media_type"], "media_type"),
+        )
 
 
 @dataclass(frozen=True)
@@ -688,6 +938,45 @@ class BundleIndex:
         paths = [item.path for item in self.artifacts]
         if paths != sorted(paths) or len(paths) != len(set(paths)):
             raise EvidenceError("invalid_bundle_index", "paths must be sorted and unique")
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> BundleIndex:
+        data = strict_fields(data, {"artifacts", "bundle_format", "schema_version"}, "BundleIndex")
+        artifacts = require_list(data["artifacts"], "artifacts")
+        return cls(
+            require_string(data["schema_version"], "schema_version"),
+            require_string(data["bundle_format"], "bundle_format"),  # type: ignore[arg-type]
+            tuple(
+                BundleArtifact.from_dict(require_object(item, "bundle artifact"))
+                for item in artifacts
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class InvalidOutputEvidence:
+    schema_version: str
+    evidence_id: str
+    probabilities: ArrayArtifact
+    threshold: ThresholdConfig
+
+    def __post_init__(self) -> None:
+        if self.schema_version != SCHEMA_VERSION or not self.evidence_id:
+            raise EvidenceError("invalid_refusal_evidence", self.evidence_id)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> InvalidOutputEvidence:
+        data = strict_fields(
+            data,
+            {"evidence_id", "probabilities", "schema_version", "threshold"},
+            "InvalidOutputEvidence",
+        )
+        return cls(
+            require_string(data["schema_version"], "schema_version"),
+            require_string(data["evidence_id"], "evidence_id"),
+            ArrayArtifact.from_dict(require_object(data["probabilities"], "probabilities")),
+            ThresholdConfig.from_dict(require_object(data["threshold"], "threshold")),
+        )
 
 
 def record_dict(record: Any) -> dict[str, Any]:

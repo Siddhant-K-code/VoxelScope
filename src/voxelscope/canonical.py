@@ -102,12 +102,19 @@ def safe_relative_path(value: str) -> PurePosixPath:
     if not value or "\\" in value:
         raise EvidenceError("unsafe_path", f"unsafe path: {value!r}")
     path = PurePosixPath(value)
-    if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
+    if (
+        path.is_absolute()
+        or (len(value) >= 2 and value[1] == ":")
+        or path.as_posix() != value
+        or any(part in {"", ".", ".."} for part in path.parts)
+    ):
         raise EvidenceError("unsafe_path", f"unsafe path: {value!r}")
     return path
 
 
 def ensure_no_symlink(root: Path, relative: PurePosixPath) -> Path:
+    if root.is_symlink():
+        raise EvidenceError("symlink_forbidden", f"root path is a symlink: {root}")
     current = root
     for part in relative.parts:
         current = current / part

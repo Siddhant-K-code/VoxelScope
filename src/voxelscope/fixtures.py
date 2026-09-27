@@ -13,7 +13,7 @@ import numpy as np
 
 from .arrays import write_array
 from .bundle import finalize_bundle
-from .canonical import EvidenceError, canonical_json_bytes, sha256_bytes, sha256_file, write_json
+from .canonical import EvidenceError, sha256_file, write_json
 from .drift import compare, component_summary, threshold_masks, validate_nested_masks
 from .records import (
     MODALITIES,
@@ -23,20 +23,37 @@ from .records import (
     ArrayArtifact,
     ExpectedRefusal,
     FailureState,
+    InvalidOutputEvidence,
     ModelBundleIdentity,
     OutputIdentity,
-    OverlapRatio,
     PlannedComparison,
     RunReceipt,
     StageTimingRecord,
     StudyManifest,
     ThresholdConfig,
     VolumeIdentity,
-    WindowConfig,
+)
+from .synthetic_contract import (
+    SYNTHETIC_ARM_ID,
+    SYNTHETIC_COMPARISONS,
+    SYNTHETIC_MODEL_CONFIG,
+    SYNTHETIC_MODEL_CONFIG_SHA256,
+    SYNTHETIC_OUTPUT_IDS,
+    SYNTHETIC_REFUSALS,
+    SYNTHETIC_RUN_ID,
+    SYNTHETIC_SPACING_MM,
+    SYNTHETIC_STUDY_ID,
+    SYNTHETIC_TIMING_PROVENANCE,
+    SYNTHETIC_VOLUME_ID,
+    reference_probabilities,
+    synthetic_affine,
+    synthetic_modalities,
+    synthetic_outputs,
+    synthetic_window_config,
 )
 from .windows import build_window_evidence
 
-SPACING_MM = (1.0, 1.5, 2.0)
+SPACING_MM = SYNTHETIC_SPACING_MM
 
 
 def _artifact(data: dict[str, Any], path: str | None = None) -> ArrayArtifact:
@@ -45,55 +62,15 @@ def _artifact(data: dict[str, Any], path: str | None = None) -> ArrayArtifact:
     return ArrayArtifact.from_dict(data)
 
 
-def synthetic_modalities(shape: tuple[int, int, int] = (7, 8, 9)) -> np.ndarray[Any, Any]:
-    z, y, x = np.indices(shape, dtype=np.float32)
-    return np.stack(
-        [
-            (z + 2 * y + 3 * x) / 50,
-            (2 * z + y + x) / 30,
-            (z * z + y + x) / 60,
-            (z + y * y + x) / 80,
-        ]
-    ).astype("<f4")
-
-
-def reference_probabilities(shape: tuple[int, int, int] = (7, 8, 9)) -> np.ndarray[Any, Any]:
-    masks = np.zeros((3, *shape), dtype=bool)
-    masks[1, 1:6, 2:6, 2:7] = True
-    masks[0, 2:5, 2:6, 3:6] = True
-    masks[2, 3:5, 4:6, 3:5] = True
-    masks[2, 2, 2, 5] = True
-    probabilities = np.where(masks, 0.9, 0.1).astype("<f4")
-    validate_nested_masks(threshold_masks(probabilities))
-    return probabilities
-
-
-def scenario_probabilities() -> dict[str, tuple[np.ndarray[Any, Any], np.ndarray[Any, Any]]]:
-    reference = reference_probabilities()
-    identical = reference.copy()
-    boundary = reference.copy()
-    boundary[1, 1, 2, 7] = 0.9
-    lost = reference.copy()
-    lost[2, 2, 2, 5] = 0.1
-    extra = reference.copy()
-    extra[1, 0, 7, 8] = 0.9
-    probability_only = reference.copy()
-    probability_only[0, 0, 0, 0] = 0.2
-    empty_reference = reference.copy()
-    empty_reference[2] = 0.1
-    empty_candidate = empty_reference.copy()
-    empty_candidate[1, 2, 2, 2] = 0.8
-    return {
-        "identical": (reference, identical),
-        "one-voxel-boundary": (reference, boundary),
-        "small-et-lost": (reference, lost),
-        "extra-false-positive": (reference, extra),
-        "probability-only": (reference, probability_only),
-        "empty-surface": (empty_reference, empty_candidate),
-    }
-
-
-def _write_output(directory: Path, output_id: str, probabilities: np.ndarray[Any, Any]) -> Path:
+def _write_output(
+    directory: Path,
+    output_id: str,
+    probabilities: np.ndarray[Any, Any],
+    *,
+    volume_identity_sha256: str,
+    model_identity_sha256: str,
+    window_ledger_sha256: str,
+) -> Path:
     validate_nested_masks(threshold_masks(probabilities))
     directory.mkdir(parents=True, exist_ok=True)
     probability = _artifact(write_array(directory / "probabilities.f32le", probabilities, "<f4"))
@@ -116,6 +93,11 @@ def _write_output(directory: Path, output_id: str, probabilities: np.ndarray[Any
         masks,
         ThresholdConfig.fixed(),
         components,
+        volume_identity_sha256,
+        model_identity_sha256,
+        window_ledger_sha256,
+        SYNTHETIC_RUN_ID,
+        SYNTHETIC_ARM_ID,
     )
     path = directory / "output.json"
     write_json(path, identity)
@@ -129,12 +111,10 @@ def _write_bundle(root: Path) -> str:
     for index, modality in enumerate(MODALITIES):
         data = write_array(arrays_dir / f"{modality.lower()}.f32le", modalities[index], "<f4")
         modality_records[modality] = _artifact(data, f"arrays/{data['path']}")
-    affine = np.eye(4, dtype="<f8")
-    affine[0, 0], affine[1, 1], affine[2, 2] = SPACING_MM
-    affine_data = write_array(arrays_dir / "affine.f64le", affine, "<f8")
+    affine_data = write_array(arrays_dir / "affine.f64le", synthetic_affine(), "<f8")
     volume = VolumeIdentity(
         SCHEMA_VERSION,
-        "synthetic-volume-v1",
+        SYNTHETIC_VOLUME_ID,
         MODALITIES,
         modalities.shape[1:],
         SPACING_MM,
@@ -142,14 +122,11 @@ def _write_bundle(root: Path) -> str:
         modality_records,
         None,
     )
-    write_json(root / "volume-identity.json", volume)
-    model_config = {
-        "executor": "identity-window-oracle",
-        "input_channels": 4,
-        "output_channels": ["TC", "WT", "ET"],
-        "schema_version": SCHEMA_VERSION,
-    }
-    write_json(root / "synthetic-model-config.json", model_config)
+    volume_path = root / "volume-identity.json"
+    write_json(volume_path, volume)
+
+    config_path = root / "synthetic-model-config.json"
+    write_json(config_path, SYNTHETIC_MODEL_CONFIG)
     model = ModelBundleIdentity(
         SCHEMA_VERSION,
         "VoxelScope synthetic identity oracle",
@@ -157,135 +134,147 @@ def _write_bundle(root: Path) -> str:
         "synthetic_oracle",
         "generated-locally",
         "Apache-2.0",
-        "synthetic-model-config.json",
-        sha256_file(root / "synthetic-model-config.json"),
+        config_path.name,
+        SYNTHETIC_MODEL_CONFIG_SHA256,
         None,
         None,
     )
-    write_json(root / "model-identity.json", model)
-    config = WindowConfig(
-        volume_shape=modalities.shape[1:],
-        roi=(8, 5, 6),
-        overlap=(OverlapRatio(1, 2), OverlapRatio(1, 2), OverlapRatio(1, 2)),
-        blend_mode="constant",
-        sigma_scale=None,
-    )
+    model_path = root / "model-identity.json"
+    write_json(model_path, model)
+
+    config = synthetic_window_config()
     evidence, weights = build_window_evidence(modalities, config)
     weight_data = write_array(root / "windows" / "weight-map.f64le", weights, "<f8")
     ledger = evidence.to_dict()
     ledger["weight_artifact"] = weight_data
-    write_json(root / "windows" / "window-ledger.json", ledger)
+    ledger_path = root / "windows" / "window-ledger.json"
+    write_json(ledger_path, ledger)
+
     manifest = StudyManifest(
         SCHEMA_VERSION,
-        "synthetic-feasibility-v0",
+        SYNTHETIC_STUDY_ID,
         True,
         "output_preservation",
         "unresolved",
         (),
         False,
-        "volume-identity.json",
-        "model-identity.json",
+        volume_path.name,
+        model_path.name,
         config,
-        (
-            "empty-reference",
-            "empty-surface",
-            "extra-false-positive",
-            "identical",
-            "one-voxel-boundary",
-            "probability-only",
-            "reference",
-            "small-et-lost",
-        ),
-        (
-            PlannedComparison("empty-surface", "empty-reference", "empty-surface"),
-            PlannedComparison("extra-false-positive", "reference", "extra-false-positive"),
-            PlannedComparison("identical", "reference", "identical"),
-            PlannedComparison("one-voxel-boundary", "reference", "one-voxel-boundary"),
-            PlannedComparison("probability-only", "reference", "probability-only"),
-            PlannedComparison("small-et-lost", "reference", "small-et-lost"),
-        ),
-        (
-            ExpectedRefusal("invalid-nesting", "invalid_nested_regions"),
-            ExpectedRefusal("invalid-padding", "unsupported_padding"),
+        SYNTHETIC_OUTPUT_IDS,
+        tuple(PlannedComparison(*item) for item in SYNTHETIC_COMPARISONS),
+        tuple(
+            ExpectedRefusal(item.refusal_id, item.code, item.status, item.stage, item.evidence_path)
+            for item in SYNTHETIC_REFUSALS
         ),
         None,
     )
     write_json(root / "study-manifest.json", manifest)
 
+    provenance = {
+        "volume_identity_sha256": sha256_file(volume_path),
+        "model_identity_sha256": sha256_file(model_path),
+        "window_ledger_sha256": sha256_file(ledger_path),
+    }
     outputs: dict[str, Path] = {}
-    reference = reference_probabilities()
-    outputs["reference"] = _write_output(root / "outputs" / "reference", "reference", reference)
-    pairs = scenario_probabilities()
-    for name, (ref, candidate) in pairs.items():
-        if name == "empty-surface":
-            outputs["empty-reference"] = _write_output(
-                root / "outputs" / "empty-reference", "empty-reference", ref
-            )
-        outputs[name] = _write_output(root / "outputs" / name, name, candidate)
-    for name, (ref, candidate) in pairs.items():
-        reference_path = (
-            outputs["empty-reference"] if name == "empty-surface" else outputs["reference"]
+    expected_outputs = synthetic_outputs()
+    for output_id in SYNTHETIC_OUTPUT_IDS:
+        outputs[output_id] = _write_output(
+            root / "outputs" / output_id,
+            output_id,
+            expected_outputs[output_id],
+            **provenance,
         )
+    for report_id, reference_id, candidate_id in SYNTHETIC_COMPARISONS:
         report = compare(
-            ref,
-            candidate,
+            expected_outputs[reference_id],
+            expected_outputs[candidate_id],
             spacing_mm=SPACING_MM,
-            reference_output_sha256=sha256_file(reference_path),
-            candidate_output_sha256=sha256_file(outputs[name]),
-            report_id=name,
+            reference_output_sha256=sha256_file(outputs[reference_id]),
+            candidate_output_sha256=sha256_file(outputs[candidate_id]),
+            report_id=report_id,
         )
-        write_json(root / "reports" / f"{name}.json", report)
+        write_json(root / "reports" / f"{report_id}.json", report)
 
-    invalid = reference.copy()
+    invalid = reference_probabilities().copy()
     invalid[2, 0, 0, 0] = 0.9
     invalid_data = write_array(root / "refusals" / "invalid-nesting.f32le", invalid, "<f4")
-    nesting_failure = FailureState(
-        SCHEMA_VERSION,
-        "invalid-nesting",
-        "refused",
-        "invalid_nested_regions",
-        "postprocess",
-        "ET is not a subset of TC",
-        (str(invalid_data["file_sha256"]),),
+    invalid_evidence_path = root / "refusals" / "invalid-nesting-evidence.json"
+    write_json(
+        invalid_evidence_path,
+        InvalidOutputEvidence(
+            SCHEMA_VERSION,
+            "invalid-nesting",
+            _artifact(invalid_data),
+            ThresholdConfig.fixed(),
+        ),
     )
-    write_json(root / "refusals" / "invalid-nesting.json", nesting_failure)
-    invalid_padding = {
-        "mode": "symmetric_reflect",
-        "requested_roi": [8, 5, 6],
-        "schema_version": SCHEMA_VERSION,
-    }
-    write_json(root / "refusals" / "invalid-padding-request.json", invalid_padding)
-    padding_failure = FailureState(
-        SCHEMA_VERSION,
-        "invalid-padding",
-        "refused",
-        "unsupported_padding",
-        "window_enumeration",
-        "Only explicit high-side zero padding is supported",
-        (sha256_file(root / "refusals" / "invalid-padding-request.json"),),
+    nesting_contract = SYNTHETIC_REFUSALS[0]
+    write_json(
+        root / "refusals" / "invalid-nesting.json",
+        FailureState(
+            SCHEMA_VERSION,
+            nesting_contract.refusal_id,
+            "refused",
+            nesting_contract.code,
+            nesting_contract.stage,
+            "ET is not a subset of TC",
+            nesting_contract.evidence_path,
+            (sha256_file(invalid_evidence_path),),
+        ),
     )
-    write_json(root / "refusals" / "invalid-padding.json", padding_failure)
 
-    provenance = sha256_bytes(canonical_json_bytes({"runtime": "not-executed-pr1"}))
+    invalid_padding = as_invalid_padding_request()
+    invalid_padding_path = root / "refusals" / "invalid-padding-request.json"
+    write_json(invalid_padding_path, invalid_padding)
+    padding_contract = SYNTHETIC_REFUSALS[1]
+    write_json(
+        root / "refusals" / "invalid-padding.json",
+        FailureState(
+            SCHEMA_VERSION,
+            padding_contract.refusal_id,
+            "refused",
+            padding_contract.code,
+            padding_contract.stage,
+            "Only explicit high-side zero padding is supported",
+            padding_contract.evidence_path,
+            (sha256_file(invalid_padding_path),),
+        ),
+    )
+
+    timing_provenance_path = root / "timing-provenance.json"
+    write_json(timing_provenance_path, SYNTHETIC_TIMING_PROVENANCE)
+    timing_digest = sha256_file(timing_provenance_path)
     timings = [
-        StageTimingRecord(stage, False, None, "ns", "not-measured", provenance, "not_executed_pr1")
+        StageTimingRecord(
+            stage,
+            False,
+            None,
+            "ns",
+            "not-measured",
+            timing_provenance_path.name,
+            timing_digest,
+            "not_executed_pr1",
+        )
         for stage in STAGES
     ]
     write_json(root / "stage-timings.json", {"records": timings, "schema_version": SCHEMA_VERSION})
-    receipt = RunReceipt(
-        SCHEMA_VERSION,
-        "synthetic-fixture-v1",
-        "succeeded",
-        "voxelscope fixture build",
-        True,
-        True,
-        False,
-        False,
-        False,
-        "stage-timings.json",
-        None,
+    write_json(
+        root / "run-receipt.json",
+        RunReceipt(
+            SCHEMA_VERSION,
+            SYNTHETIC_RUN_ID,
+            "succeeded",
+            "voxelscope fixture build",
+            True,
+            True,
+            False,
+            False,
+            False,
+            "stage-timings.json",
+            None,
+        ),
     )
-    write_json(root / "run-receipt.json", receipt)
     (root / "SUMMARY.txt").write_bytes(
         b"VoxelScope synthetic evidence bundle\n"
         b"Research use only. No medical data, model weights, GPU, or network were used.\n"
@@ -295,6 +284,22 @@ def _write_bundle(root: Path) -> str:
         b"Root digest: see bundle.sha256.\n"
     )
     return finalize_bundle(root)
+
+
+def as_invalid_padding_request() -> dict[str, Any]:
+    config = synthetic_window_config()
+    return {
+        "blend_mode": config.blend_mode,
+        "overlap": [
+            {"denominator": item.denominator, "numerator": item.numerator}
+            for item in config.overlap
+        ],
+        "padding_mode": "symmetric_reflect",
+        "roi": list(config.roi),
+        "sigma_scale": None,
+        "traversal_order": config.traversal_order,
+        "volume_shape": list(config.volume_shape),
+    }
 
 
 def build_fixture_bundle(output: Path) -> str:
