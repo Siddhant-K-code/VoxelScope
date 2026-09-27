@@ -10,7 +10,9 @@ VoxelScope is research-only software. It does not provide diagnosis, treatment, 
 
 ## Current status
 
-PR 1 is an offline synthetic foundation. It defines the evidence contracts needed before a one-volume MONAI BraTS feasibility run. It does not download medical data or model weights, execute MONAI or TensorRT, use a GPU, provision cloud resources, or measure diagnostic accuracy.
+Milestone 2 adds official source pins and private custody controls on top of the PR 1 synthetic foundation. The official MONAI `brats_mri_segmentation` 0.5.2 archive has been acquired and verified in owner-private session storage without extraction or model loading. Medical Segmentation Decathlon Task01 remains blocked because the official bucket exposes only the full 7.6 GB tar, not direct objects for one training image, its label, and `dataset.json`.
+
+The project is still **NO-GO** for real-data inference. It has not loaded a model, inspected voxel arrays, run inference, used a GPU, provisioned cloud resources, authorized spend, or measured diagnostic accuracy.
 
 The current package provides:
 
@@ -22,6 +24,11 @@ The current package provides:
 - Synthetic probability and nested `TC`, `WT`, and `ET` masks.
 - Dice, connected-component, threshold-flip, surface Dice, HD95, and maximum boundary-distance auditing.
 - Complete evidence bundles with a closed file allowlist and tamper detection.
+- A canonical official source registry and acquisition plan.
+- Strict typed custody records with an exact network and redirect allowlist.
+- Owner-private, no-clobber model acquisition and receipt generation.
+- Archive path, symlink, encryption, file-count, size, compression-ratio, closed-member, and license checks without extraction.
+- A repository scan for model weights, medical images, subject identifiers, credentials, private paths, and private receipts.
 
 ## Architecture
 
@@ -35,6 +42,9 @@ src/voxelscope/
   drift.py       Nested-region validation and boundary-drift metrics
   bundle.py      Closed bundle indexing and semantic verification
   fixtures.py    Deterministic synthetic evidence generation
+  custody_records.py  Versioned source and acquisition records
+  real_data_contract.py  Trusted milestone 2 source and plan pins
+  custody.py      Private acquisition, archive verification, and public scans
   cli.py         Offline command-line interface
 ```
 
@@ -50,6 +60,8 @@ make test
 make lint
 make typecheck
 make demo
+make custody-validate
+make build
 ```
 
 The CLI commands are:
@@ -62,9 +74,15 @@ voxelscope drift compare \
   --reference build/evidence/outputs/reference/output.json \
   --candidate build/evidence/outputs/one-voxel-boundary/output.json \
   --output build/boundary-report.json
+voxelscope source verify --registry research/source-registry-v1.json
+voxelscope custody plan \
+  --registry research/source-registry-v1.json \
+  --plan research/acquisition-plan-v1.json
+voxelscope custody scan-public --root .
 ```
 
 `fixture build`, `windows build`, and `drift compare` refuse to overwrite an existing destination.
+All custody commands are offline unless `custody acquire` receives `--allow-network`. Acquisition is restricted to the exact source and redirect origins in the canonical plan, requires known size and content hashes, refuses overwrite, never extracts archives, and writes receipts only under an owner-private root outside the repository. Private custody commands currently fail closed on Windows because restrictive ACL verification is not implemented.
 
 ## Evidence model
 
@@ -87,7 +105,11 @@ VoxelScope does not currently claim that:
 - Any numerical drift threshold is clinically acceptable.
 - Any backend is safe for clinical or patient-specific use.
 
-See [the preregistration](docs/preregistration-v0.md) and [future execution runbook](docs/future-execution-runbook.md) before proposing real-data work.
+See [the real-data readiness record](docs/real-data-readiness-v1.md), [one-volume feasibility protocol](docs/one-volume-feasibility-protocol-v1.md), and [private custody workflow](docs/private-custody-workflow-v1.md) before proposing real-data work.
+
+## Next gate
+
+Obtain exact official direct URLs, sizes, and content hashes for one Task01 training image, its matching label, and `dataset.json`. Do not download the full Task01 tar as a workaround. Private custody and reviewer approval of those three objects are required before preprocessing equivalence or host authorization can move to GO.
 
 ## License
 
