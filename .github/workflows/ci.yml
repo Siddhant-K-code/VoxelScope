@@ -19,7 +19,7 @@ jobs:
           version: "0.12.3"
           enable-cache: true
       - run: uv sync --frozen --python 3.13
-      - run: make lint typecheck
+      - run: make lint typecheck custody-validate build
 
   test:
     strategy:

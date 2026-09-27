@@ -24,15 +24,26 @@ from .canonical import (
     sha256_file,
     write_json,
 )
+from .custody import (
+    download_artifact,
+    init_private_root,
+    load_acquisition_plan,
+    load_source_registry,
+    render_plan,
+    scan_public_tree,
+    verify_and_receipt,
+    verify_public_contracts,
+)
 from .drift import compare
 from .fixtures import build_fixture_bundle
+from .real_data_contract import verify_plan_contract
 from .records import StudyManifest, VolumeIdentity
 from .windows import build_window_evidence
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="voxelscope", description="Offline synthetic evidence tooling"
+        prog="voxelscope", description="Offline evidence and custody tooling"
     )
     top = parser.add_subparsers(dest="command", required=True)
 
@@ -56,6 +67,32 @@ def _parser() -> argparse.ArgumentParser:
     drift_compare.add_argument("--reference", type=Path, required=True)
     drift_compare.add_argument("--candidate", type=Path, required=True)
     drift_compare.add_argument("--output", type=Path, required=True)
+
+    source = top.add_parser("source", help="verify public source contracts")
+    source_sub = source.add_subparsers(dest="source_command", required=True)
+    source_verify = source_sub.add_parser("verify")
+    source_verify.add_argument("--registry", type=Path, required=True)
+
+    custody = top.add_parser("custody", help="plan and verify private artifact custody")
+    custody_sub = custody.add_subparsers(dest="custody_command", required=True)
+    custody_plan = custody_sub.add_parser("plan")
+    custody_plan.add_argument("--registry", type=Path, required=True)
+    custody_plan.add_argument("--plan", type=Path, required=True)
+    custody_init = custody_sub.add_parser("init")
+    custody_init.add_argument("--root", type=Path, required=True)
+    custody_verify = custody_sub.add_parser("verify")
+    custody_verify.add_argument("--registry", type=Path, required=True)
+    custody_verify.add_argument("--plan", type=Path, required=True)
+    custody_verify.add_argument("--artifact-id", required=True)
+    custody_verify.add_argument("--root", type=Path, required=True)
+    custody_acquire = custody_sub.add_parser("acquire")
+    custody_acquire.add_argument("--registry", type=Path, required=True)
+    custody_acquire.add_argument("--plan", type=Path, required=True)
+    custody_acquire.add_argument("--artifact-id", required=True)
+    custody_acquire.add_argument("--root", type=Path, required=True)
+    custody_acquire.add_argument("--allow-network", action="store_true")
+    custody_scan = custody_sub.add_parser("scan-public")
+    custody_scan.add_argument("--root", type=Path, required=True)
     return parser
 
 
@@ -150,6 +187,32 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"verified_bundle_sha256={verify_bundle(args.bundle)}")
         elif args.command == "drift" and args.drift_command == "compare":
             print(f"report_sha256={_drift_compare(args.reference, args.candidate, args.output)}")
+        elif args.command == "source" and args.source_command == "verify":
+            print(f"verified_registry_sha256={verify_public_contracts(args.registry)}")
+        elif args.command == "custody" and args.custody_command == "plan":
+            registry = load_source_registry(args.registry)
+            plan = load_acquisition_plan(args.plan)
+            print(render_plan(plan, registry), end="")
+        elif args.command == "custody" and args.custody_command == "init":
+            init_private_root(args.root)
+            print("private_root_initialized=true")
+        elif args.command == "custody" and args.custody_command in {"verify", "acquire"}:
+            registry = load_source_registry(args.registry)
+            plan = load_acquisition_plan(args.plan)
+            verify_plan_contract(plan, registry)
+            artifact = next(
+                (item for item in plan.artifacts if item.artifact_id == args.artifact_id),
+                None,
+            )
+            if artifact is None:
+                raise EvidenceError("unknown_artifact", args.artifact_id)
+            if args.custody_command == "acquire":
+                download_artifact(artifact, args.root, allow_network=args.allow_network)
+            result = verify_and_receipt(plan, args.artifact_id, args.root)
+            print(f"custody_status=verified artifact_id={args.artifact_id}")
+            print(f"file_count={result.get('archive_file_count', 1)}")
+        elif args.command == "custody" and args.custody_command == "scan-public":
+            print(f"public_files_scanned={scan_public_tree(args.root)}")
         else:
             raise EvidenceError("invalid_command", "unsupported command")
     except EvidenceError as exc:
