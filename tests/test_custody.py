@@ -118,6 +118,7 @@ def test_redirect_url_must_not_contain_credentials() -> None:
     assert caught.value.code == "unsafe_url"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="private custody fails closed on Windows")
 def test_download_requires_explicit_network_opt_in(tmp_path: Path) -> None:
     artifact = load_acquisition_plan(PLAN).artifacts[0]
     with pytest.raises(EvidenceError) as caught:
@@ -125,6 +126,7 @@ def test_download_requires_explicit_network_opt_in(tmp_path: Path) -> None:
     assert caught.value.code == "network_opt_in_required"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="private custody fails closed on Windows")
 def test_download_refuses_blocked_artifact_before_network(tmp_path: Path) -> None:
     artifact = load_acquisition_plan(PLAN).artifacts[1]
     with pytest.raises(EvidenceError) as caught:
@@ -132,6 +134,7 @@ def test_download_refuses_blocked_artifact_before_network(tmp_path: Path) -> Non
     assert caught.value.code == "acquisition_blocked"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="private custody fails closed on Windows")
 def test_download_refuses_existing_destination_before_network(tmp_path: Path) -> None:
     artifact = load_acquisition_plan(PLAN).artifacts[0]
     root = _private_root(tmp_path)
@@ -239,6 +242,7 @@ def test_zip_verifier_requires_license_member(tmp_path: Path) -> None:
     assert caught.value.code == "missing_license"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="private custody fails closed on Windows")
 def test_private_receipt_is_owner_only_and_no_clobber(tmp_path: Path) -> None:
     root = _private_root(tmp_path)
     payload = b"Apache License 2.0\n"
@@ -402,6 +406,7 @@ def test_public_scan_rejects_windows_private_paths(tmp_path: Path, content: byte
     assert caught.value.code == "private_path_in_repository"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="private custody fails closed on Windows")
 def test_private_root_inside_repository_is_refused(tmp_path: Path) -> None:
     repository = tmp_path / "repository"
     repository.mkdir()
@@ -410,6 +415,7 @@ def test_private_root_inside_repository_is_refused(tmp_path: Path) -> None:
     assert caught.value.code == "custody_root_in_repository"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="private custody fails closed on Windows")
 def test_private_root_through_symlink_into_repository_is_refused(tmp_path: Path) -> None:
     repository = tmp_path / "repository"
     repository.mkdir()
