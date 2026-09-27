@@ -286,14 +286,13 @@ def _write_bundle(root: Path) -> str:
         None,
     )
     write_json(root / "run-receipt.json", receipt)
-    (root / "SUMMARY.txt").write_text(
-        "VoxelScope synthetic evidence bundle\n"
-        "Research use only. No medical data, model weights, GPU, or network were used.\n"
-        "Claim scope: output preservation only. Diagnostic accuracy is not claimed.\n"
-        "Scenarios: identical, boundary shift, ET loss, false positive, "
-        "probability-only, empty surface.\n"
-        "Root digest: see bundle.sha256.\n",
-        encoding="ascii",
+    (root / "SUMMARY.txt").write_bytes(
+        b"VoxelScope synthetic evidence bundle\n"
+        b"Research use only. No medical data, model weights, GPU, or network were used.\n"
+        b"Claim scope: output preservation only. Diagnostic accuracy is not claimed.\n"
+        b"Scenarios: identical, boundary shift, ET loss, false positive, "
+        b"probability-only, empty surface.\n"
+        b"Root digest: see bundle.sha256.\n"
     )
     return finalize_bundle(root)
 

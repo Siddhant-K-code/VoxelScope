@@ -66,7 +66,7 @@ def finalize_bundle(root: Path) -> str:
     index = BundleIndex("voxelscope/v1", "voxelscope-closed-bundle-v1", artifacts)
     write_json(root / "bundle.json", index)
     root_hash = sha256_file(root / "bundle.json")
-    (root / "bundle.sha256").write_text(f"{root_hash}  bundle.json\n", encoding="ascii")
+    (root / "bundle.sha256").write_bytes(f"{root_hash}  bundle.json\n".encode("ascii"))
     return root_hash
 
 

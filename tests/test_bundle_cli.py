@@ -189,7 +189,7 @@ def test_bundle_artifact_unknown_field_is_refused_after_reseal(tmp_path: Path) -
     index["artifacts"][0]["unexpected"] = True
     write_json(root / "bundle.json", index)
     digest = sha256_file(root / "bundle.json")
-    (root / "bundle.sha256").write_text(f"{digest}  bundle.json\n", encoding="ascii")
+    (root / "bundle.sha256").write_bytes(f"{digest}  bundle.json\n".encode("ascii"))
     with pytest.raises(EvidenceError) as caught:
         verify_bundle(root)
     assert caught.value.code == "invalid_record"
@@ -308,7 +308,7 @@ def test_artifact_media_type_is_bound_to_path(tmp_path: Path) -> None:
     index["artifacts"][0]["media_type"] = "application/json"
     write_json(index_path, index)
     digest = sha256_file(index_path)
-    (root / "bundle.sha256").write_text(f"{digest}  bundle.json\n", encoding="ascii")
+    (root / "bundle.sha256").write_bytes(f"{digest}  bundle.json\n".encode("ascii"))
     with pytest.raises(EvidenceError) as caught:
         verify_bundle(root)
     assert caught.value.code == "bundle_artifact_media_type_mismatch"
@@ -383,7 +383,7 @@ def test_bundle_format_literal_is_enforced(tmp_path: Path) -> None:
     index["bundle_format"] = "unknown"
     write_json(path, index)
     digest = sha256_file(path)
-    (root / "bundle.sha256").write_text(f"{digest}  bundle.json\n", encoding="ascii")
+    (root / "bundle.sha256").write_bytes(f"{digest}  bundle.json\n".encode("ascii"))
     with pytest.raises(EvidenceError) as caught:
         verify_bundle(root)
     assert caught.value.code == "invalid_bundle_format"
