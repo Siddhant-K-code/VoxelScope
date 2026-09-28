@@ -275,7 +275,7 @@ def _reindex_public_bundle(root: Path) -> None:
         f"{sha256_file(root / relative)}  {relative}\n"
         for relative in sorted(milestone5_module.PAYLOAD_PATHS)
     )
-    (root / "SHA256SUMS").write_text(sums, encoding="ascii")
+    (root / "SHA256SUMS").write_bytes(sums.encode("ascii"))
     index = {
         "artifacts": [
             {
@@ -290,7 +290,7 @@ def _reindex_public_bundle(root: Path) -> None:
     }
     write_json(root / "bundle.json", index)
     digest = sha256_file(root / "bundle.json")
-    (root / "bundle.sha256").write_text(f"{digest}  bundle.json\n", encoding="ascii")
+    (root / "bundle.sha256").write_bytes(f"{digest}  bundle.json\n".encode("ascii"))
 
 
 @pytest.mark.parametrize(
