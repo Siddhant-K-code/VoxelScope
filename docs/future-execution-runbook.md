@@ -48,13 +48,16 @@ No voxel rendering, model execution, or diagnostic assessment is authorized by t
 
 The selected source derivative is MNI152-registered, skull-stripped, and N4-corrected. The pre-z-scored derivative is not selected because the pinned MONAI inference configuration performs channel-wise normalization over nonzero voxels.
 
-Before inference, a reviewed adapter must define:
+Milestone 5 completed one offline execution of a reviewed adapter that:
 
-1. Exact loading and stacking in T1c, T1, T2, and FLAIR order.
-2. Whether source geometry is accepted unchanged or transformed, with a hash-bound proof.
-3. Exact reproduction of the bundle's nonzero channel-wise normalization.
-4. Output inversion, sigmoid, threshold 0.5, and nested TC, WT, and ET channel handling.
-5. Any comparison-only mapping between source-mask labels and model output labels.
+1. Loaded and stacked T1c, T1, T2, and FLAIR in role-defined order.
+2. Preserved the unchanged source voxel-index axes and bound them to the private geometry identity.
+3. Reproduced the bundle's nonzero channel-wise normalization through two independent implementations.
+4. Excluded the label and refused every model-loading or inference path.
+
+The resulting status is preprocessing GO. This status covers only role-driven channel loading, scaled float32 conversion, nonzero channel-wise normalization, independent implementation agreement, finite outputs, geometry preservation, label exclusion, private output publication, and terminal evidence. It does not resolve the mapping between unchanged Nibabel `(I,J,K)` voxel-index axes and VoxelScope synthetic `(Z,Y,X)` traversal.
+
+Output inversion, sigmoid, threshold 0.5, nested TC, WT, and ET handling, and every comparison-only source-label mapping remain later gates.
 
 The source mask uses 0 for background, 1 for necrotic core, 2 for non-enhancing or edematous tumor, and 3 for contrast-enhancing tumor. The model output encoding uses 0, 1, 2, and 4 after collapsing nested channels with ET priority. A numeric source 3 to model-output 4 mapping has been identified but is not authorized. It does not prove full semantic equivalence, especially for source value 2.
 
@@ -95,7 +98,7 @@ The future order is PyTorch FP32 reference and exact repeat, PyTorch AMP, Tensor
 
 Real execution remains blocked on:
 
-- Preprocessing adapter and equivalence review.
+- `(I,J,K)` to `(Z,Y,X)` traversal mapping and evidence review.
 - Source-mask and model-output semantic mapping review.
 - Subject-overlap resolution or an approved output-preservation-only bound.
 - Runtime image, library, CUDA, driver, and backend identities.

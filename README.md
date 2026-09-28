@@ -10,9 +10,9 @@ VoxelScope is research-only software. It does not provide diagnosis, treatment, 
 
 ## Current status
 
-Milestone 4 acquired the eight objects in the approved OpenNeuro `ds007045` v2.0.1 plan into owner-private custody through one no-retry attempt. All expected sizes and source-published hashes matched. The five medical files passed the preregistered bounded NIfTI structure, finite-value, mask-domain, and exact cross-file geometry gates. Milestone 5 now prospectively specifies and implements the exact preprocessing adapter with two independent synthetic-tested implementations. Private adapter execution remains blocked on a distinct explicit approval. The official MONAI `brats_mri_segmentation` 0.5.2 archive remains separately verified without extraction or model loading.
+Milestone 4 acquired the eight objects in the approved OpenNeuro `ds007045` v2.0.1 plan into owner-private custody through one no-retry attempt. All expected sizes and source-published hashes matched. The five medical files passed the preregistered bounded NIfTI structure, finite-value, mask-domain, and exact cross-file geometry gates. Milestone 5 then consumed one explicit offline approval for the exact preprocessing adapter. Four image channels were processed in T1c, T1, T2, and FLAIR order by two independent implementations. The private outputs passed the frozen tolerance, finite-output, geometry-preservation, label-exclusion, closed-snapshot, and replay checks. The official MONAI `brats_mri_segmentation` 0.5.2 archive remains separately verified without extraction or model loading.
 
-The project is still **NO-GO** for real-data inference. Structural GO makes the selected input eligible only for the separately authorized preprocessing execution. The private execution approval prompt was unavailable, so no preprocessing attempt marker was written, no private voxel array was processed, and no milestone 5 public result bundle was generated. Private adapter evidence, source-label versus model-output semantics, model-training overlap, runtime identity, host and budget authorization, and the explicit inference start gate remain unresolved. The project has not loaded a model, run inference, used a GPU, provisioned cloud resources, authorized spend, or measured diagnostic accuracy.
+The project is still **NO-GO** for real-data inference. Preprocessing GO establishes a private `(C,I,J,K)` tensor contract over unchanged Nibabel voxel-index axes. Mapping those axes into VoxelScope's synthetic `(Z,Y,X)` traversal convention remains unresolved. Source-label versus model-output semantics, model-training overlap, runtime image, host and budget authorization, and the explicit inference start gate also remain unresolved. The project has not loaded a model, run inference, used a GPU, provisioned cloud resources, authorized spend, or measured diagnostic accuracy.
 
 The current package provides:
 
@@ -93,6 +93,7 @@ voxelscope custody plan \
   --registry research/source-registry-v1.json \
   --plan research/acquisition-plan-v1.json
 voxelscope milestone4-public verify --bundle research/milestone-4
+voxelscope milestone5-public verify --bundle research/milestone-5
 voxelscope preprocess execute --help
 voxelscope preprocess verify --help
 voxelscope milestone5-public verify --help
@@ -128,7 +129,7 @@ See [the preprocessing adapter contract](docs/preprocessing-adapter-v1.md), [rea
 
 ## Next gate
 
-Independently review the frozen preprocessing adapter, then obtain explicit approval bound to adapter plan SHA-256 `74d0214092b37502911b334fa11380cfd077aa10277425e532e6e861377f519f` and the existing private custody receipt identity. Execute once without network, verify the private outputs, and publish only sanitized gate evidence. The mapping from private `(I,J,K)` voxel axes into synthetic `(Z,Y,X)` traversal remains a later explicit gate. Model-training overlap remains unresolved. No model load, inference, GPU provisioning, or spend is authorized.
+Prospectively define and independently review the mapping from private `(I,J,K)` voxel-index axes into VoxelScope's synthetic `(Z,Y,X)` traversal contract. The mapping must bind affine interpretation, window coordinates, padding, output inversion, and evidence identities without silently transposing or relabeling axes. Model-training overlap and source-label versus model-output semantics remain unresolved. No model load, inference, GPU provisioning, or spend is authorized.
 
 ## License
 
