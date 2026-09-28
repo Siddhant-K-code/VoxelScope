@@ -621,7 +621,10 @@ def _read_regular_bounded(path: Path, *, maximum_bytes: int) -> bytes:
         raise EvidenceError("symlink_forbidden", "public bundle entry")
     try:
         before = path.lstat()
-        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        descriptor = os.open(
+            path,
+            os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0),
+        )
     except OSError as exc:
         raise EvidenceError("unsafe_path", "public bundle entry") from exc
     try:
