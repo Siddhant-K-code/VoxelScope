@@ -2,11 +2,11 @@
 
 ## Status
 
-The milestone 5 adapter contract and implementation are complete on synthetic fixtures. Private execution is not authorized by this document. The adapter plan SHA-256 is `74d0214092b37502911b334fa11380cfd077aa10277425e532e6e861377f519f`.
+The milestone 5 adapter contract was implemented, reviewed, and executed once through an explicit offline approval. The adapter plan SHA-256 is `74d0214092b37502911b334fa11380cfd077aa10277425e532e6e861377f519f`.
 
 The project remains **NO-GO** for inference. The adapter does not extract or load model weights, invoke a model, use a GPU or MPS device, access a network, provision cloud resources, or authorize spend.
 
-The private execution approval prompt was unavailable on 2026-09-28. No preprocessing attempt marker was written, no private voxel array was processed, and no milestone 5 public result bundle was generated. This change is implementation-only and makes no real preprocessing GO or NO-GO claim.
+The one-shot private result is **preprocessing GO** and **inference NO-GO**. Four image channels were processed by both implementations. The private outputs passed the preregistered implementation tolerance, finite-output, geometry-preservation, background-zero, label-exclusion, and closed-evidence checks. The sanitized public bundle is [`research/milestone-5`](../research/milestone-5/) with root SHA-256 `08c0e0fe5871582b19fbad0887625e121c8371187449a4a7abbe7b1d97a524cf`. It contains no medical values, private paths, tensors, geometry, statistics, source subject locator, or private evidence identities.
 
 ## Pinned official sources
 
@@ -71,24 +71,24 @@ The independent implementation scans depth chunks of eight source planes. It com
 
 Both output tensors are disk-backed memory maps. Comparison scans at most 1,048,576 float32 values from each tensor at a time. Under the milestone 4 bounds, the reference arm can hold the raw or scaled full channel, one float32 effective channel, its nonzero selection, and one normalized channel. The independent arm holds only one eight-plane float32 chunk and its selected values, in addition to disk-backed outputs.
 
-## Exact execution command
+## Consumed execution command
 
-The command is intentionally unusable until the creator supplies the existing owner-private custody root and explicitly approves both hashes:
+The following command shape was approved and executed once. The exact plan and custody identities are consumed and replay is forbidden:
 
 ```bash
 uv run voxelscope preprocess execute \
   --record research/one-volume-source-decision-v1.json \
   --custody-plan research/one-volume-acquisition-plan-v1.json \
   --adapter-plan research/preprocessing-adapter-plan-v1.json \
-  --root <existing-owner-private-custody-root> \
+  --root <owner-private-custody-root> \
   --approve-plan-sha256 74d0214092b37502911b334fa11380cfd077aa10277425e532e6e861377f519f \
   --approve-custody-receipt-sha256 <reviewed-private-custody-receipt-sha256>
 ```
 
 The command performs no network request. It reads the trusted milestone 4 private receipt, terminal records, structural report, eight custody artifacts during trusted verification, and then only the four image artifacts for adapter execution. Each image is copied through a no-follow descriptor into the private staging directory while its size and SHA-256 are reverified. Both implementations consume the staged immutable copy, which is deleted before publication. The command writes one started marker, one completion or refusal terminal record, and one closed owner-private preprocessing snapshot containing the reference tensor, independent tensor, and private report.
 
-The output must be verified with `voxelscope preprocess verify` using the same arguments before sanitized public evidence is generated. Private paths, receipt hashes, geometry, statistics, nonzero counts, tensor bytes, tensor hashes, and source subject locators must never enter public evidence.
+The output was independently verified with `voxelscope preprocess verify` using the same approvals before sanitized public evidence was generated. Private paths, receipt hashes, geometry, statistics, nonzero counts, tensor bytes, tensor hashes, and source subject locators remain outside public evidence.
 
 Sanitized refusal evidence is not a generic NO-GO. The private refusal record enforces stage-specific channel-count and snapshot-publication invariants. Public refusal generation accepts only a closed mapping of known error codes to valid stages, derives a sanitized refusal phase and completed-channel count, and refuses unknown or stage-inconsistent codes. Public summaries separately report adapter, finite-output, geometry-preservation, label-exclusion, private-output, and terminal-evidence status. Private identities and exact error codes remain private.
 
-The verifier prospectively pins the deterministic sanitized GO template and every allowed sanitized refusal-phase and channel-count template. These template identities do not report a real outcome. No milestone 5 public bundle exists until private completion or refusal evidence is explicitly authorized, produced, and verified.
+The verifier prospectively pins the deterministic sanitized GO template and every allowed sanitized refusal-phase and channel-count template. The real sanitized bundle matches the pinned GO template. Its public summary reports four channels, two independent implementations, preprocessing GO, finite-output GO, geometry-preservation GO, label-exclusion GO, private-output GO, terminal-evidence GO, and inference authorization false.

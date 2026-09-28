@@ -18,6 +18,7 @@ custody-validate:
 	uv run voxelscope source one-volume --record research/one-volume-source-decision-v1.json --plan research/one-volume-acquisition-plan-v1.json
 	uv run voxelscope custody plan --registry research/source-registry-v1.json --plan research/acquisition-plan-v1.json
 	uv run voxelscope milestone4-public verify --bundle research/milestone-4
+	uv run voxelscope milestone5-public verify --bundle research/milestone-5
 	uv run voxelscope custody scan-public --root .
 
 demo:
