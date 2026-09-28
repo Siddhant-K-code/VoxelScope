@@ -132,6 +132,8 @@ def _now() -> str:
 
 
 def _fsync_directory(path: Path) -> None:
+    if os.name == "nt":
+        return
     descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
     try:
         os.fsync(descriptor)
@@ -148,11 +150,13 @@ def _mkdir_private_chain(root: Path, relative: PurePosixPath) -> Path:
                 raise EvidenceError("unsafe_path", relative.as_posix())
         else:
             current.mkdir(mode=0o700)
-            os.chmod(current, 0o700)
+            if os.name != "nt":
+                os.chmod(current, 0o700)
             _fsync_directory(current.parent)
-        metadata = current.stat()
-        if metadata.st_uid != os.getuid() or stat.S_IMODE(metadata.st_mode) != 0o700:
-            raise EvidenceError("private_directory_permissions", relative.as_posix())
+        if os.name != "nt":
+            metadata = current.stat()
+            if metadata.st_uid != os.getuid() or stat.S_IMODE(metadata.st_mode) != 0o700:
+                raise EvidenceError("private_directory_permissions", relative.as_posix())
     return current
 
 

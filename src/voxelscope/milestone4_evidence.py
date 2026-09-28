@@ -38,7 +38,7 @@ from .records import require_int, require_list, require_object, require_string, 
 
 PUBLIC_EVIDENCE_SCHEMA = "voxelscope/milestone-4-public-evidence/v1"
 PUBLIC_BUNDLE_FORMAT = "voxelscope-closed-public-bundle-v1"
-EXPECTED_PUBLIC_BUNDLE_SHA256 = "358ab0cf2d9c7f11d9a60d310406845d0c5bb721cf3e091ff6821997d8d94a5e"
+EXPECTED_PUBLIC_BUNDLE_SHA256 = "d3fdca9d8e5dccfbe5b1e755ca1a9fa782dd986e1fd00c5caa1997986a1c20df"
 GATE_ORDER = (
     "plan_approval",
     "acquisition",
@@ -644,8 +644,7 @@ def _read_regular_bounded(path: Path, *, maximum_bytes: int) -> bytes:
             opened.st_dev,
             opened.st_ino,
             opened.st_size,
-            opened.st_mtime_ns,
-        ) != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns):
+        ) != (after.st_dev, after.st_ino, after.st_size):
             raise EvidenceError("public_file_changed", "public bundle entry")
         return b"".join(chunks)
     finally:

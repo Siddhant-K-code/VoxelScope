@@ -12,7 +12,7 @@ Structural GO means only that the exact private files are mechanically admissibl
 
 The closed sanitized bundle is [`research/milestone-4`](../research/milestone-4/).
 
-- Public bundle root SHA-256: `358ab0cf2d9c7f11d9a60d310406845d0c5bb721cf3e091ff6821997d8d94a5e`.
+- Public bundle root SHA-256: `d3fdca9d8e5dccfbe5b1e755ca1a9fa782dd986e1fd00c5caa1997986a1c20df`.
 - Verified artifacts: 8.
 - Validated medical files: 5.
 - Exact geometry comparisons: 4.

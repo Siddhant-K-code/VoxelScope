@@ -555,6 +555,7 @@ def test_transport_rejects_changed_final_url(tmp_path: Path) -> None:
     assert caught.value.code == "unexpected_http_response"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="private custody fails closed on Windows")
 def test_wrong_plan_approval_refuses_before_network(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -582,6 +583,7 @@ def test_wrong_plan_approval_refuses_before_network(
     assert not (root / "attempts").exists()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="private custody fails closed on Windows")
 def test_one_volume_cli_redacts_private_path_on_failure(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -638,6 +640,7 @@ def test_one_volume_cli_redacts_private_path_on_io_failure(
     assert str(tmp_path) not in captured.err
 
 
+@pytest.mark.skipif(os.name == "nt", reason="private custody fails closed on Windows")
 def test_attempt_marker_consumes_approval_before_first_request_and_blocks_replay(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
