@@ -995,16 +995,15 @@ def test_public_evidence_verifier_rejects_progress_inflation(tmp_path: Path) -> 
     summary["geometry_comparison_count"] = 4
     write_json(bundle / "public-summary-v1.json", summary)
     checksum_lines = [f"{sha256_file(bundle / path)}  {path}\n" for path in sorted(PAYLOAD_PATHS)]
-    (bundle / "SHA256SUMS").write_text("".join(checksum_lines), encoding="ascii")
+    (bundle / "SHA256SUMS").write_bytes("".join(checksum_lines).encode("ascii"))
     index = load_json(bundle / "bundle.json")
     for indexed in index["artifacts"]:
         path = bundle / indexed["path"]
         indexed["sha256"] = sha256_file(path)
         indexed["size_bytes"] = path.stat().st_size
     write_json(bundle / "bundle.json", index)
-    (bundle / "bundle.sha256").write_text(
-        f"{sha256_file(bundle / 'bundle.json')}  bundle.json\n",
-        encoding="ascii",
+    (bundle / "bundle.sha256").write_bytes(
+        f"{sha256_file(bundle / 'bundle.json')}  bundle.json\n".encode("ascii")
     )
     with pytest.raises(EvidenceError) as caught:
         verify_milestone4_public_bundle(bundle, require_trusted_digest=False)
@@ -1025,16 +1024,15 @@ def test_public_verifier_rejects_self_consistent_fixture_substitution(
     item["size_bytes"] = len(replacement)
     write_json(bundle / "synthetic-fixture-manifest.json", manifest)
     checksum_lines = [f"{sha256_file(bundle / path)}  {path}\n" for path in sorted(PAYLOAD_PATHS)]
-    (bundle / "SHA256SUMS").write_text("".join(checksum_lines), encoding="ascii")
+    (bundle / "SHA256SUMS").write_bytes("".join(checksum_lines).encode("ascii"))
     index = load_json(bundle / "bundle.json")
     for indexed in index["artifacts"]:
         path = bundle / indexed["path"]
         indexed["sha256"] = sha256_file(path)
         indexed["size_bytes"] = path.stat().st_size
     write_json(bundle / "bundle.json", index)
-    (bundle / "bundle.sha256").write_text(
-        f"{sha256_file(bundle / 'bundle.json')}  bundle.json\n",
-        encoding="ascii",
+    (bundle / "bundle.sha256").write_bytes(
+        f"{sha256_file(bundle / 'bundle.json')}  bundle.json\n".encode("ascii")
     )
     with pytest.raises(EvidenceError) as caught:
         verify_milestone4_public_bundle(bundle, require_trusted_digest=False)
