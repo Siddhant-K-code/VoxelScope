@@ -640,11 +640,7 @@ def _read_regular_bounded(path: Path, *, maximum_bytes: int) -> bytes:
                 raise EvidenceError("public_file_limit", "public bundle entry")
             chunks.append(chunk)
         after = os.fstat(descriptor)
-        if size != opened.st_size or (
-            opened.st_dev,
-            opened.st_ino,
-            opened.st_size,
-        ) != (after.st_dev, after.st_ino, after.st_size):
+        if size != opened.st_size or after.st_size != opened.st_size:
             raise EvidenceError("public_file_changed", "public bundle entry")
         return b"".join(chunks)
     finally:
