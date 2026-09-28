@@ -4,12 +4,14 @@
 
 This is a non-executable planning document. It does not authorize medical-data acquisition, file inspection, model loading, inference, GPU or MPS execution, cloud provisioning, or spending.
 
-Milestone 3 establishes:
+Milestones 3 and 4 establish:
 
 - The official MONAI `brats_mri_segmentation` 0.5.2 model identity is pinned.
 - The model archive is privately acquired and hash-verified without extraction or loading.
 - OpenNeuro `ds007045` v2.0.1 source identity and one-volume selection are GO.
-- The OpenNeuro acquisition plan remains network-disabled and blocked.
+- The exact OpenNeuro plan was acquired once into owner-private custody.
+- All eight content identities and the five-file bounded NIfTI structural gate are GO.
+- A sanitized closed public bundle records only gate states, counts, synthetic fixtures, and non-claims.
 - Real-data inference remains NO-GO.
 
 ## Model custody state
@@ -18,32 +20,27 @@ The model source, version, archive size, published SHA-1, observed SHA-256, clos
 
 Future work must not reacquire, extract, deserialize, or load the model until the execution protocol explicitly permits that action. Before use, an operator must review the existing private receipt and independently confirm that the custody root and artifact remain unchanged.
 
-## Dataset acquisition gate
+## Dataset custody state
 
 The canonical plan is [`research/one-volume-acquisition-plan-v1.json`](../research/one-volume-acquisition-plan-v1.json). It pins four N4-only MRI objects in model order T1c, T1, T2, and FLAIR, one spatially aligned mask, and three dataset metadata files.
 
 The selected case is fixed by an outcome-blind rule: the lexicographically first snapshot subject directory with the complete required file set, determined from tree metadata before any medical-byte, label-content, lesion-property, or model-output inspection.
 
-The plan is blocked and has no acquisition command. To advance it:
-
-1. Obtain explicit operator approval for the exact canonical plan hash.
-2. Add or approve a private-custody acquisition mechanism that requires an owner-only root outside the repository, exact URL and origin allowlists, no redirect outside those origins, no retry, and no overwrite.
-3. Acquire only the eight pinned objects. Do not acquire the full dataset or use range extraction from a bulk archive.
-4. Verify every expected byte size and SHA-256 before opening any file.
-5. Write owner-only receipts without publishing private paths, signed URLs, medical bytes, or private receipt content.
-6. Stop after custody verification until the structural and preprocessing gates are separately approved.
+The exact plan was approved and executed once through a no-retry mechanism. The attempt marker, terminal completion event, eight artifacts, custody receipt, and structural report remain owner-private. Every expected size and source-published SHA-256 matched. Do not reacquire or copy the files into the repository.
 
 The source record uses a public deidentified BIDS locator only to bind the five medical objects. No participant crosswalk, direct identity, or clinical metadata may enter public evidence.
 
 ## NIfTI structural gate
 
-After private acquisition and before model loading:
+Milestone 4 completed these checks before model loading:
 
 1. Inspect only NIfTI headers and bounded structural properties.
 2. Verify regular files, expected compression, dtype, finite values, dimensions, affine matrices, spacing, orientation, and exact geometry across all four modalities and the mask.
 3. Confirm that the mask is integer-valued and contains only source values 0, 1, 2, and 3.
 4. Record all observations in private hash-bound evidence.
 5. Stop on any mismatch, unexpected value, malformed header, decompression limit, or evidence-write failure.
+
+The resulting status is structural GO. This means only that the exact private files met the frozen mechanical predicates. It does not establish anatomical correctness, reference-label accuracy, preprocessing equivalence, or clinical validity.
 
 No voxel rendering, model execution, or diagnostic assessment is authorized by this gate.
 
@@ -98,8 +95,6 @@ The future order is PyTorch FP32 reference and exact repeat, PyTorch AMP, Tensor
 
 Real execution remains blocked on:
 
-- Explicit approval and private execution of the OpenNeuro acquisition plan.
-- Private NIfTI structural and cross-file geometry verification.
 - Preprocessing adapter and equivalence review.
 - Source-mask and model-output semantic mapping review.
 - Subject-overlap resolution or an approved output-preservation-only bound.

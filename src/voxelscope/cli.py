@@ -37,11 +37,17 @@ from .custody import (
 )
 from .drift import compare
 from .fixtures import build_fixture_bundle
+from .milestone4_evidence import (
+    build_milestone4_public_bundle,
+    build_milestone4_refusal_public_bundle,
+    verify_milestone4_public_bundle,
+)
 from .one_volume import (
     render_one_volume_decision,
     verify_one_volume_decision,
     verify_one_volume_plan,
 )
+from .one_volume_custody import acquire_trusted_one_volume, verify_trusted_one_volume
 from .real_data_contract import verify_plan_contract
 from .records import StudyManifest, VolumeIdentity
 from .windows import build_window_evidence
@@ -102,6 +108,44 @@ def _parser() -> argparse.ArgumentParser:
     custody_acquire.add_argument("--allow-network", action="store_true")
     custody_scan = custody_sub.add_parser("scan-public")
     custody_scan.add_argument("--root", type=Path, required=True)
+
+    one_volume_custody = top.add_parser(
+        "one-volume-custody",
+        help="acquire and verify only the trusted milestone 4 one-volume plan",
+    )
+    one_volume_custody_sub = one_volume_custody.add_subparsers(
+        dest="one_volume_custody_command", required=True
+    )
+    one_volume_custody_init = one_volume_custody_sub.add_parser("init")
+    one_volume_custody_init.add_argument("--root", type=Path, required=True)
+    one_volume_custody_acquire = one_volume_custody_sub.add_parser("acquire")
+    one_volume_custody_acquire.add_argument("--record", type=Path, required=True)
+    one_volume_custody_acquire.add_argument("--plan", type=Path, required=True)
+    one_volume_custody_acquire.add_argument("--root", type=Path, required=True)
+    one_volume_custody_acquire.add_argument("--approve-plan-sha256", required=True)
+    one_volume_custody_acquire.add_argument("--allow-network", action="store_true")
+    one_volume_custody_verify = one_volume_custody_sub.add_parser("verify")
+    one_volume_custody_verify.add_argument("--record", type=Path, required=True)
+    one_volume_custody_verify.add_argument("--plan", type=Path, required=True)
+    one_volume_custody_verify.add_argument("--root", type=Path, required=True)
+    one_volume_custody_verify.add_argument("--approve-plan-sha256", required=True)
+    one_volume_custody_public = one_volume_custody_sub.add_parser("public-evidence")
+    one_volume_custody_public.add_argument("--record", type=Path, required=True)
+    one_volume_custody_public.add_argument("--plan", type=Path, required=True)
+    one_volume_custody_public.add_argument("--root", type=Path, required=True)
+    one_volume_custody_public.add_argument("--approve-plan-sha256", required=True)
+    one_volume_custody_public.add_argument("--output", type=Path, required=True)
+    one_volume_custody_refusal = one_volume_custody_sub.add_parser("public-refusal")
+    one_volume_custody_refusal.add_argument("--record", type=Path, required=True)
+    one_volume_custody_refusal.add_argument("--plan", type=Path, required=True)
+    one_volume_custody_refusal.add_argument("--root", type=Path, required=True)
+    one_volume_custody_refusal.add_argument("--approve-plan-sha256", required=True)
+    one_volume_custody_refusal.add_argument("--output", type=Path, required=True)
+
+    milestone4 = top.add_parser("milestone4-public", help="verify sanitized milestone 4 evidence")
+    milestone4_sub = milestone4.add_subparsers(dest="milestone4_command", required=True)
+    milestone4_verify = milestone4_sub.add_parser("verify")
+    milestone4_verify.add_argument("--bundle", type=Path, required=True)
     return parser
 
 
@@ -250,15 +294,83 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"file_count={result.get('archive_file_count', 1)}")
         elif args.command == "custody" and args.custody_command == "scan-public":
             print(f"public_files_scanned={scan_public_tree(args.root)}")
+        elif args.command == "one-volume-custody" and args.one_volume_custody_command == "init":
+            init_private_root(args.root, repository_root=_repository_root())
+            print("private_root_initialized=true")
+        elif args.command == "one-volume-custody" and args.one_volume_custody_command == "acquire":
+            receipt = acquire_trusted_one_volume(
+                args.record,
+                args.plan,
+                args.root,
+                approve_plan_sha256=args.approve_plan_sha256,
+                allow_network=args.allow_network,
+                repository_root=_repository_root(),
+            )
+            print(f"acquisition_status=go artifact_count={len(receipt.artifacts)}")
+            print("structural_gate=go medical_artifact_count=5")
+            print("inference_authorized=false")
+        elif args.command == "one-volume-custody" and args.one_volume_custody_command == "verify":
+            receipt = verify_trusted_one_volume(
+                args.record,
+                args.plan,
+                args.root,
+                approve_plan_sha256=args.approve_plan_sha256,
+                repository_root=_repository_root(),
+            )
+            print(f"custody_status=verified artifact_count={len(receipt.artifacts)}")
+            print("structural_gate=go medical_artifact_count=5")
+            print("inference_authorized=false")
+        elif (
+            args.command == "one-volume-custody"
+            and args.one_volume_custody_command == "public-evidence"
+        ):
+            bundle_sha256 = build_milestone4_public_bundle(
+                args.record,
+                args.plan,
+                args.root,
+                args.output,
+                approve_plan_sha256=args.approve_plan_sha256,
+                repository_root=_repository_root(),
+            )
+            print(f"public_evidence_status=go bundle_sha256={bundle_sha256}")
+            print("inference_authorized=false")
+        elif (
+            args.command == "one-volume-custody"
+            and args.one_volume_custody_command == "public-refusal"
+        ):
+            bundle_sha256 = build_milestone4_refusal_public_bundle(
+                args.record,
+                args.plan,
+                args.root,
+                args.output,
+                approve_plan_sha256=args.approve_plan_sha256,
+                repository_root=_repository_root(),
+            )
+            print(f"public_evidence_status=no-go bundle_sha256={bundle_sha256}")
+            print("inference_authorized=false")
+        elif args.command == "milestone4-public" and args.milestone4_command == "verify":
+            print(
+                f"verified_milestone4_public_bundle_sha256="
+                f"{verify_milestone4_public_bundle(args.bundle)}"
+            )
         else:
             raise EvidenceError("invalid_command", "unsupported command")
     except EvidenceError as exc:
-        print(f"ERROR {exc.code}: {exc}", file=sys.stderr)
+        if args.command == "one-volume-custody":
+            print(f"ERROR {exc.code}", file=sys.stderr)
+        else:
+            print(f"ERROR {exc.code}: {exc}", file=sys.stderr)
         return 2
     except (TypeError, KeyError, ValueError, ArithmeticError) as exc:
-        print(f"ERROR malformed_evidence: {exc}", file=sys.stderr)
+        if args.command == "one-volume-custody":
+            print("ERROR malformed_evidence", file=sys.stderr)
+        else:
+            print(f"ERROR malformed_evidence: {exc}", file=sys.stderr)
         return 2
     except OSError as exc:
-        print(f"ERROR io_error: {exc}", file=sys.stderr)
+        if args.command == "one-volume-custody":
+            print("ERROR io_error", file=sys.stderr)
+        else:
+            print(f"ERROR io_error: {exc}", file=sys.stderr)
         return 1
     return 0

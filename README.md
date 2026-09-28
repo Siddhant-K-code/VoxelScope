@@ -10,9 +10,9 @@ VoxelScope is research-only software. It does not provide diagnosis, treatment, 
 
 ## Current status
 
-Milestone 3 adds a versioned one-volume source decision on top of the milestone 2 private custody controls. The official MONAI `brats_mri_segmentation` 0.5.2 archive remains privately verified without extraction or model loading. Independent Exa.ai and Parallel.ai research found a source-path GO in OpenNeuro `ds007045` v2.0.1: four direct N4-corrected MRI objects, one aligned label, and versioned metadata are pinned by official identities, sizes, and hashes. The acquisition plan remains blocked and network-disabled.
+Milestone 4 acquired the eight objects in the approved OpenNeuro `ds007045` v2.0.1 plan into owner-private custody through one no-retry attempt. All expected sizes and source-published hashes matched. The five medical files passed the preregistered bounded NIfTI structure, finite-value, mask-domain, and exact cross-file geometry gates. The official MONAI `brats_mri_segmentation` 0.5.2 archive remains separately verified without extraction or model loading.
 
-The project is still **NO-GO** for real-data inference. No medical artifact was downloaded. NIfTI geometry, label semantic equivalence, preprocessing equivalence, and model-training overlap remain unresolved. The project has not loaded a model, inspected voxel arrays, run inference, used a GPU, provisioned cloud resources, authorized spend, or measured diagnostic accuracy.
+The project is still **NO-GO** for real-data inference. Structural GO makes the selected input eligible only for the next reviewed stage. Preprocessing adapter equivalence, source-label versus model-output semantics, model-training overlap, runtime identity, host and budget authorization, and the explicit inference start gate remain unresolved. The project has not loaded a model, run inference, used a GPU, provisioned cloud resources, authorized spend, or measured diagnostic accuracy.
 
 The current package provides:
 
@@ -47,6 +47,9 @@ src/voxelscope/
   one_volume_records.py  Typed milestone 3 source-decision evidence
   one_volume_contract.py  Trusted milestone 3 decision pin
   one_volume.py  Offline decision verification and rendering
+  one_volume_custody_records.py  Private acquisition and structural records
+  one_volume_custody.py  One-shot acquisition and bounded NIfTI validation
+  milestone4_evidence.py  Sanitized closed public evidence
   custody.py      Private acquisition, archive verification, and public scans
   cli.py         Offline command-line interface
 ```
@@ -84,6 +87,7 @@ voxelscope source one-volume \
 voxelscope custody plan \
   --registry research/source-registry-v1.json \
   --plan research/acquisition-plan-v1.json
+voxelscope milestone4-public verify --bundle research/milestone-4
 voxelscope custody scan-public --root .
 ```
 
@@ -106,7 +110,7 @@ VoxelScope does not currently claim that:
 
 - Any accelerated backend preserves a real medical segmentation.
 - Any output is diagnostically accurate.
-- The selected OpenNeuro medical artifacts have been acquired or approved for inference.
+- The privately acquired OpenNeuro artifacts are approved for model loading or inference.
 - Any model, dataset, or output has clinical approval.
 - Any real subject is independent from model training data.
 - Any numerical drift threshold is clinically acceptable.
@@ -116,7 +120,7 @@ See [the real-data readiness record](docs/real-data-readiness-v1.md), [active on
 
 ## Next gate
 
-Review and explicitly authorize the blocked OpenNeuro one-volume plan. After private acquisition, verify all expected hashes and inspect NIfTI shape, affine, dtype, finite values, and cross-file geometry without loading a model. Preregister the numeric ET remap from dataset value 3 to 4, keep broader label semantic equivalence unresolved, and resolve or explicitly bound model-training overlap before any label comparison.
+Specify and independently review the exact preprocessing adapter without loading the model. It must bind channel stacking, source geometry handling, nonzero channel-wise normalization, output inversion, and the separation between source labels `0/1/2/3` and model output labels `0/1/2/4`. Model-training overlap must remain unresolved or be explicitly bounded. No inference, GPU provisioning, or spend is authorized.
 
 ## License
 

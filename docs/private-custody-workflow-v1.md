@@ -16,10 +16,13 @@ uv run voxelscope custody plan \
   --registry research/source-registry-v1.json \
   --plan research/acquisition-plan-v1.json
 
+uv run voxelscope milestone4-public verify \
+  --bundle research/milestone-4
+
 uv run voxelscope custody scan-public --root .
 ```
 
-These commands use only repository content. The milestone 2 Task01 plan remains NO-GO. The milestone 3 OpenNeuro source path is GO, but its acquisition plan is explicitly blocked and has no acquisition command pending operator approval.
+These commands use only repository content. The milestone 2 Task01 plan remains NO-GO. The milestone 3 OpenNeuro source path is GO. Milestone 4 consumed one explicit approval for that exact plan and completed private acquisition plus structural validation.
 
 ## Initialize owner-private custody
 
@@ -76,4 +79,4 @@ Do not invoke acquisition for `msd-task01-single-volume`. The plan marks it bloc
 
 The OpenNeuro source selected in milestone 3 provides four direct modality objects, a matching aligned label, and versioned metadata with immutable expected sizes and hashes. The blocked plan is [`one-volume-acquisition-plan-v1.json`](../research/one-volume-acquisition-plan-v1.json), and the candidate matrix is in [`one-volume-source-decision-v1.md`](one-volume-source-decision-v1.md).
 
-Do not acquire these objects until an operator explicitly approves the plan and supplies a new custody command or equivalent reviewed mechanism. The current CLI can verify and render the plan but cannot execute it.
+The approved milestone 4 attempt is complete and must not be repeated. Its private files and receipts remain outside the repository. The public bundle in [`research/milestone-4`](../research/milestone-4/) contains only sanitized gate states, aggregate counts, deterministic synthetic fixtures, and explicit non-claims.

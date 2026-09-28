@@ -2,7 +2,7 @@
 
 ## Status and purpose
 
-This is the active prospective, zero-inference protocol. It supersedes unexecuted protocol v1 because milestone 3 selected a different data source. It does not authorize acquisition or execution.
+This is the active prospective, zero-inference protocol. It supersedes unexecuted protocol v1 because milestone 3 selected a different data source. Milestone 4 completed the separately approved private acquisition and structural gates. This protocol still does not authorize model loading or inference.
 
 The protocol defines how one future VoxelScope run may test numerical output preservation against a pinned PyTorch FP32 reference. It does not assess diagnosis, treatment, clinical safety, radiologist equivalence, patient-specific validity, or diagnostic accuracy. No clinical meaning may be inferred from a model name, channel, label, or mask.
 
@@ -20,7 +20,7 @@ Execution remains prohibited until every gate below has an approved GO record:
 
 The aligned label is retained for custody identity only. The source value 3 to model-output value 4 numeric mapping is not authorized by this protocol. Full source-label to nested TC, WT, and ET semantic equivalence remains unresolved. The label must not be used for diagnostic accuracy unless semantics and exact subject non-overlap are proved prospectively.
 
-Source-path GO in [`one-volume-source-decision-v1.md`](one-volume-source-decision-v1.md) does not satisfy any execution precondition by itself. The canonical acquisition plan remains blocked.
+Source-path GO in [`one-volume-source-decision-v1.md`](one-volume-source-decision-v1.md) did not satisfy an execution precondition by itself. Milestone 4 consumed one explicit approval for the canonical plan, acquired its exact objects privately, and recorded structural GO. The sanitized public result is [`research/milestone-4`](../research/milestone-4/). Private custody does not authorize model loading.
 
 The case selection is outcome-blind: choose the lexicographically first snapshot subject directory with all four required N4-only modalities and an aligned mask, using only OpenNeuro tree metadata before any medical-byte, label-content, lesion-property, or model-output inspection.
 
@@ -87,7 +87,7 @@ A future threshold must be preregistered in a new protocol version before candid
 
 ## Stop conditions
 
-Stop before acquisition unless the exact blocked plan is approved and a reviewed private-custody mechanism is available.
+The approved acquisition attempt is complete and must not be repeated.
 
 Stop before inference if any required artifact, identity, NIfTI structural check, license review, preprocessing decision, semantic decision, overlap bound, host pin, privacy review, or budget approval is missing.
 
