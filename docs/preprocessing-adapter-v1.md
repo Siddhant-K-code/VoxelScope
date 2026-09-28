@@ -2,7 +2,7 @@
 
 ## Status
 
-The milestone 5 adapter contract and implementation are complete on synthetic fixtures. Private execution is not authorized by this document. The adapter plan SHA-256 is `c88deb35c469505f10df40bdf6fbe818b0991c8ba68bff1f03f6f7e4f7943e75`.
+The milestone 5 adapter contract and implementation are complete on synthetic fixtures. Private execution is not authorized by this document. The adapter plan SHA-256 is `74d0214092b37502911b334fa11380cfd077aa10277425e532e6e861377f519f`.
 
 The project remains **NO-GO** for inference. The adapter does not extract or load model weights, invoke a model, use a GPU or MPS device, access a network, provision cloud resources, or authorize spend.
 
@@ -81,7 +81,7 @@ uv run voxelscope preprocess execute \
   --custody-plan research/one-volume-acquisition-plan-v1.json \
   --adapter-plan research/preprocessing-adapter-plan-v1.json \
   --root <existing-owner-private-custody-root> \
-  --approve-plan-sha256 c88deb35c469505f10df40bdf6fbe818b0991c8ba68bff1f03f6f7e4f7943e75 \
+  --approve-plan-sha256 74d0214092b37502911b334fa11380cfd077aa10277425e532e6e861377f519f \
   --approve-custody-receipt-sha256 <reviewed-private-custody-receipt-sha256>
 ```
 

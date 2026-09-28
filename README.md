@@ -128,7 +128,7 @@ See [the preprocessing adapter contract](docs/preprocessing-adapter-v1.md), [rea
 
 ## Next gate
 
-Independently review the frozen preprocessing adapter, then obtain explicit approval bound to adapter plan SHA-256 `c88deb35c469505f10df40bdf6fbe818b0991c8ba68bff1f03f6f7e4f7943e75` and the existing private custody receipt identity. Execute once without network, verify the private outputs, and publish only sanitized gate evidence. The mapping from private `(I,J,K)` voxel axes into synthetic `(Z,Y,X)` traversal remains a later explicit gate. Model-training overlap remains unresolved. No model load, inference, GPU provisioning, or spend is authorized.
+Independently review the frozen preprocessing adapter, then obtain explicit approval bound to adapter plan SHA-256 `74d0214092b37502911b334fa11380cfd077aa10277425e532e6e861377f519f` and the existing private custody receipt identity. Execute once without network, verify the private outputs, and publish only sanitized gate evidence. The mapping from private `(I,J,K)` voxel axes into synthetic `(Z,Y,X)` traversal remains a later explicit gate. Model-training overlap remains unresolved. No model load, inference, GPU provisioning, or spend is authorized.
 
 ## License
 

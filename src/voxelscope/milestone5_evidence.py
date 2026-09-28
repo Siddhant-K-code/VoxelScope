@@ -40,15 +40,15 @@ PUBLIC_EVIDENCE_SCHEMA = "voxelscope/milestone-5-public-evidence/v1"
 PUBLIC_BUNDLE_FORMAT = "voxelscope-closed-public-bundle-v1"
 EXPECTED_PUBLIC_BUNDLE_SHA256S = frozenset(
     {
-        "183ff1b55aa1fea501acfaf71d4bc90432741fe1f40e1932576a7b04f96c9e02",
-        "1acb7df00ad5489ef9001a8ccfaa5482ba1bfdeb6681831cec301cdb373adaff",
-        "3fe384ecadd4933d9d858df69fdc8b915fd438adc5907acb44943a12a9dc5532",
-        "6d0285a87299c5cc51b5e3ace51f3a4aba6b4b64613cc0bc9d569b051426de60",
-        "71c5551d84bf4d783d5ef5cb0ef3a80da2779666944e6c8f73929fa0eca266b5",
-        "8cb05ed962478516817d0c14e1f1ff67ee5557805a57749b1a14cf05b4492442",
-        "95afe5721c9bd1981c504e902c854f02c0aa2022d4a585aa3b82935cea391a14",
-        "e1ee2658d3a73bbd8d539e34b73127607a3b3c2df2fb9ba0ee10a7833c835975",
-        "fc39350bfcb70f5caf4deae9f4789bc5f4c2f9ff41b344e96c84cc9a5a462c7e",
+        "08c0e0fe5871582b19fbad0887625e121c8371187449a4a7abbe7b1d97a524cf",
+        "150d7007883547eef008aaaea7504962fc9619fc8162dcaa557f606f6fd8f675",
+        "1af91639c237ea499d4b82c3b397178e272aa3e48ff97ac8ab7fdf2eef88486c",
+        "619923b70e62cd9ca7a2261d1005354ef752220df9399fc4fb367b3a561b06ee",
+        "6eacbcf497829f38aff8692fc9386d2cb19fa4bc24ba37ec1b18112acc2de3a5",
+        "abf843f290e96e4682c382f60f747c20d107953c20f019b732f74db9dce2030b",
+        "b30030dd0961f25926741f6db44f0412d05ed271af3b994a38c08f397711aa0f",
+        "bf1acf457c5e3422430004129a066e05cb3c0e69dd57614e71426f9e4f7f7526",
+        "eb3c12bdcacecedc7b62a8551830a47c6e50ec996627fabd773c824f6c3b2e5c",
     }
 )
 PAYLOAD_PATHS = (

@@ -228,12 +228,18 @@ def _acquired_root(
     intercept: float = 0.0,
 ) -> tuple[Path, OneVolumeAcquisitionPlan, dict[str, np.ndarray[Any, Any]]]:
     plan, payloads, values = _synthetic_plan(slope=slope, intercept=intercept)
+    runtime_identity = AdapterPlan.from_dict(load_json(ADAPTER_PLAN)).runtime_identity
 
     def trusted(decision_path: Path, plan_path: Path) -> tuple[OneVolumeAcquisitionPlan, str, str]:
         return plan, DECISION_SHA256, PLAN_SHA256
 
     monkeypatch.setattr(custody_module, "_load_trusted_plan", trusted)
     monkeypatch.setattr(preprocessing_module, "_load_trusted_plan", trusted)
+    monkeypatch.setattr(
+        preprocessing_module,
+        "_runtime_identity",
+        lambda repository_root: runtime_identity,
+    )
     root = _private_root(tmp_path)
     acquire_trusted_one_volume(
         DECISION,
@@ -825,6 +831,12 @@ def test_windows_fails_closed_before_preprocessing_attempt(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    runtime_identity = AdapterPlan.from_dict(load_json(ADAPTER_PLAN)).runtime_identity
+    monkeypatch.setattr(
+        preprocessing_module,
+        "_runtime_identity",
+        lambda repository_root: runtime_identity,
+    )
     monkeypatch.setattr(base_custody_module, "_is_windows", lambda: True)
     root = tmp_path / "custody"
     with pytest.raises(EvidenceError) as caught:
@@ -844,8 +856,16 @@ def test_windows_fails_closed_before_preprocessing_attempt(
 def test_preprocessing_cli_redacts_private_paths(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    runtime_identity = AdapterPlan.from_dict(load_json(ADAPTER_PLAN)).runtime_identity
+    monkeypatch.setattr(
+        preprocessing_module,
+        "_runtime_identity",
+        lambda repository_root: runtime_identity,
+    )
     private_root = tmp_path / "private-custody"
+    expected_code = 2 if os.name == "nt" else 1
     assert (
         main(
             [
@@ -865,11 +885,12 @@ def test_preprocessing_cli_redacts_private_paths(
                 "0" * 64,
             ]
         )
-        == 1
+        == expected_code
     )
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert captured.err == "ERROR io_error\n"
+    expected_error = "ERROR private_acl_unverified\n" if os.name == "nt" else "ERROR io_error\n"
+    assert captured.err == expected_error
     assert str(tmp_path) not in captured.err
 
 
@@ -885,7 +906,11 @@ def test_non_little_endian_runtime_is_refused_before_execution(
 def test_public_bundle_is_sanitized_and_privacy_scan_rejects_private_fields(
     tmp_path: Path,
 ) -> None:
-    plan, plan_sha256 = load_adapter_plan(ADAPTER_PLAN, repository_root=ROOT)
+    plan, plan_sha256 = load_adapter_plan(
+        ADAPTER_PLAN,
+        repository_root=ROOT,
+        verify_runtime=False,
+    )
     sources = tuple((item.path, item.sha256) for item in plan.implementation_sources)
     output = tmp_path / "public"
     bundle_sha256 = _build_public_bundle(

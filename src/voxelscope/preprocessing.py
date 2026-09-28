@@ -94,13 +94,18 @@ def _now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
-def load_adapter_plan(path: Path, *, repository_root: Path) -> tuple[AdapterPlan, str]:
+def load_adapter_plan(
+    path: Path,
+    *,
+    repository_root: Path,
+    verify_runtime: bool = True,
+) -> tuple[AdapterPlan, str]:
     if is_link_like(path) or not path.is_file():
         raise EvidenceError("unsafe_path", "adapter plan must be a regular file")
     data = load_json(path)
     plan = AdapterPlan.from_dict(require_object(data, "adapter plan"))
     resolved_repository = repository_root.resolve(strict=True)
-    if _runtime_identity(resolved_repository) != plan.runtime_identity:
+    if verify_runtime and _runtime_identity(resolved_repository) != plan.runtime_identity:
         raise EvidenceError("preprocessing_runtime_mismatch", "runtime identity differs")
     for identity in plan.implementation_sources:
         source = ensure_no_symlink(resolved_repository, safe_relative_path(identity.path))
