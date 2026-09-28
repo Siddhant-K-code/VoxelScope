@@ -42,12 +42,18 @@ from .milestone4_evidence import (
     build_milestone4_refusal_public_bundle,
     verify_milestone4_public_bundle,
 )
+from .milestone5_evidence import (
+    build_milestone5_public_bundle,
+    build_milestone5_refusal_public_bundle,
+    verify_milestone5_public_bundle,
+)
 from .one_volume import (
     render_one_volume_decision,
     verify_one_volume_decision,
     verify_one_volume_plan,
 )
 from .one_volume_custody import acquire_trusted_one_volume, verify_trusted_one_volume
+from .preprocessing import execute_preprocessing, verify_preprocessing
 from .real_data_contract import verify_plan_contract
 from .records import StudyManifest, VolumeIdentity
 from .windows import build_window_evidence
@@ -146,6 +152,42 @@ def _parser() -> argparse.ArgumentParser:
     milestone4_sub = milestone4.add_subparsers(dest="milestone4_command", required=True)
     milestone4_verify = milestone4_sub.add_parser("verify")
     milestone4_verify.add_argument("--bundle", type=Path, required=True)
+
+    preprocess = top.add_parser(
+        "preprocess",
+        help="execute or verify the one-shot private preprocessing adapter",
+    )
+    preprocess_sub = preprocess.add_subparsers(dest="preprocess_command", required=True)
+
+    def add_preprocess_private_arguments(command: argparse.ArgumentParser) -> None:
+        command.add_argument("--record", type=Path, required=True)
+        command.add_argument("--custody-plan", type=Path, required=True)
+        command.add_argument("--adapter-plan", type=Path, required=True)
+        command.add_argument("--root", type=Path, required=True)
+        command.add_argument("--approve-plan-sha256", required=True)
+        command.add_argument("--approve-custody-receipt-sha256", required=True)
+
+    preprocess_execute = preprocess_sub.add_parser("execute")
+    add_preprocess_private_arguments(preprocess_execute)
+    preprocess_verify = preprocess_sub.add_parser("verify")
+    add_preprocess_private_arguments(preprocess_verify)
+    preprocess_public = preprocess_sub.add_parser("public-evidence")
+    add_preprocess_private_arguments(preprocess_public)
+    preprocess_public.add_argument("--output", type=Path, required=True)
+    preprocess_refusal = preprocess_sub.add_parser("public-refusal")
+    preprocess_refusal.add_argument("--adapter-plan", type=Path, required=True)
+    preprocess_refusal.add_argument("--root", type=Path, required=True)
+    preprocess_refusal.add_argument("--approve-plan-sha256", required=True)
+    preprocess_refusal.add_argument(
+        "--approve-custody-receipt-sha256",
+        required=True,
+    )
+    preprocess_refusal.add_argument("--output", type=Path, required=True)
+
+    milestone5 = top.add_parser("milestone5-public", help="verify sanitized milestone 5 evidence")
+    milestone5_sub = milestone5.add_subparsers(dest="milestone5_command", required=True)
+    milestone5_verify = milestone5_sub.add_parser("verify")
+    milestone5_verify.add_argument("--bundle", type=Path, required=True)
     return parser
 
 
@@ -353,22 +395,85 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"verified_milestone4_public_bundle_sha256="
                 f"{verify_milestone4_public_bundle(args.bundle)}"
             )
+        elif args.command == "preprocess" and args.preprocess_command == "execute":
+            report = execute_preprocessing(
+                args.record,
+                args.custody_plan,
+                args.adapter_plan,
+                args.root,
+                approve_plan_sha256=args.approve_plan_sha256,
+                approve_custody_receipt_sha256=args.approve_custody_receipt_sha256,
+                repository_root=_repository_root(),
+            )
+            print(
+                f"preprocessing_status=go "
+                f"input_channel_count={len(report.channel_order)} "
+                "independent_implementation_count=2"
+            )
+            print("label_excluded=true geometry_preserved=true finite_output=true")
+            print("model_loaded=false inference_run=false inference_authorized=false")
+        elif args.command == "preprocess" and args.preprocess_command == "verify":
+            report = verify_preprocessing(
+                args.record,
+                args.custody_plan,
+                args.adapter_plan,
+                args.root,
+                approve_plan_sha256=args.approve_plan_sha256,
+                approve_custody_receipt_sha256=args.approve_custody_receipt_sha256,
+                repository_root=_repository_root(),
+            )
+            print(
+                f"preprocessing_status=verified "
+                f"input_channel_count={len(report.channel_order)} "
+                "independent_implementation_count=2"
+            )
+            print("label_excluded=true geometry_preserved=true finite_output=true")
+            print("model_loaded=false inference_run=false inference_authorized=false")
+        elif args.command == "preprocess" and args.preprocess_command == "public-evidence":
+            bundle_sha256 = build_milestone5_public_bundle(
+                args.record,
+                args.custody_plan,
+                args.adapter_plan,
+                args.root,
+                args.output,
+                approve_plan_sha256=args.approve_plan_sha256,
+                approve_custody_receipt_sha256=args.approve_custody_receipt_sha256,
+                repository_root=_repository_root(),
+            )
+            print(f"public_evidence_status=go bundle_sha256={bundle_sha256}")
+            print("inference_authorized=false")
+        elif args.command == "preprocess" and args.preprocess_command == "public-refusal":
+            bundle_sha256 = build_milestone5_refusal_public_bundle(
+                args.adapter_plan,
+                args.root,
+                args.output,
+                approve_plan_sha256=args.approve_plan_sha256,
+                approve_custody_receipt_sha256=args.approve_custody_receipt_sha256,
+                repository_root=_repository_root(),
+            )
+            print(f"public_evidence_status=no-go bundle_sha256={bundle_sha256}")
+            print("inference_authorized=false")
+        elif args.command == "milestone5-public" and args.milestone5_command == "verify":
+            print(
+                f"verified_milestone5_public_bundle_sha256="
+                f"{verify_milestone5_public_bundle(args.bundle)}"
+            )
         else:
             raise EvidenceError("invalid_command", "unsupported command")
     except EvidenceError as exc:
-        if args.command == "one-volume-custody":
+        if args.command in {"one-volume-custody", "preprocess"}:
             print(f"ERROR {exc.code}", file=sys.stderr)
         else:
             print(f"ERROR {exc.code}: {exc}", file=sys.stderr)
         return 2
     except (TypeError, KeyError, ValueError, ArithmeticError) as exc:
-        if args.command == "one-volume-custody":
+        if args.command in {"one-volume-custody", "preprocess"}:
             print("ERROR malformed_evidence", file=sys.stderr)
         else:
             print(f"ERROR malformed_evidence: {exc}", file=sys.stderr)
         return 2
     except OSError as exc:
-        if args.command == "one-volume-custody":
+        if args.command in {"one-volume-custody", "preprocess"}:
             print("ERROR io_error", file=sys.stderr)
         else:
             print(f"ERROR io_error: {exc}", file=sys.stderr)

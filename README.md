@@ -10,9 +10,9 @@ VoxelScope is research-only software. It does not provide diagnosis, treatment, 
 
 ## Current status
 
-Milestone 4 acquired the eight objects in the approved OpenNeuro `ds007045` v2.0.1 plan into owner-private custody through one no-retry attempt. All expected sizes and source-published hashes matched. The five medical files passed the preregistered bounded NIfTI structure, finite-value, mask-domain, and exact cross-file geometry gates. The official MONAI `brats_mri_segmentation` 0.5.2 archive remains separately verified without extraction or model loading.
+Milestone 4 acquired the eight objects in the approved OpenNeuro `ds007045` v2.0.1 plan into owner-private custody through one no-retry attempt. All expected sizes and source-published hashes matched. The five medical files passed the preregistered bounded NIfTI structure, finite-value, mask-domain, and exact cross-file geometry gates. Milestone 5 now prospectively specifies and implements the exact preprocessing adapter with two independent synthetic-tested implementations. Private adapter execution remains blocked on a distinct explicit approval. The official MONAI `brats_mri_segmentation` 0.5.2 archive remains separately verified without extraction or model loading.
 
-The project is still **NO-GO** for real-data inference. Structural GO makes the selected input eligible only for the next reviewed stage. Preprocessing adapter equivalence, source-label versus model-output semantics, model-training overlap, runtime identity, host and budget authorization, and the explicit inference start gate remain unresolved. The project has not loaded a model, run inference, used a GPU, provisioned cloud resources, authorized spend, or measured diagnostic accuracy.
+The project is still **NO-GO** for real-data inference. Structural GO makes the selected input eligible only for the separately authorized preprocessing execution. The private execution approval prompt was unavailable, so no preprocessing attempt marker was written, no private voxel array was processed, and no milestone 5 public result bundle was generated. Private adapter evidence, source-label versus model-output semantics, model-training overlap, runtime identity, host and budget authorization, and the explicit inference start gate remain unresolved. The project has not loaded a model, run inference, used a GPU, provisioned cloud resources, authorized spend, or measured diagnostic accuracy.
 
 The current package provides:
 
@@ -29,6 +29,8 @@ The current package provides:
 - Owner-private, no-clobber model acquisition and receipt generation.
 - Archive path, symlink, encryption, file-count, size, compression-ratio, closed-member, and license checks without extraction.
 - A repository scan for model weights, medical images, subject identifiers, credentials, private paths, and private receipts.
+- A role-driven, no-spatial-transform preprocessing adapter with a one-shot authorization bound to the adapter plan and custody receipt.
+- Direct float32 NumPy normalization and an independent chunked Welford implementation with a frozen comparison tolerance.
 
 ## Architecture
 
@@ -50,11 +52,14 @@ src/voxelscope/
   one_volume_custody_records.py  Private acquisition and structural records
   one_volume_custody.py  One-shot acquisition and bounded NIfTI validation
   milestone4_evidence.py  Sanitized closed public evidence
+  preprocessing_records.py  Typed adapter plan, report, and refusal records
+  preprocessing.py  One-shot dual-implementation private preprocessing
+  milestone5_evidence.py  Sanitized preprocessing evidence
   custody.py      Private acquisition, archive verification, and public scans
   cli.py         Offline command-line interface
 ```
 
-Arrays use `(C, Z, Y, X)` layout. Windows use zero-based half-open coordinates `[start, end)`. Traversal is lexicographic `Z, Y, X`, with `X` changing fastest. Overlap is stored as an exact rational relative to ROI size. The only permitted padding is explicit zero padding on the high side of an axis.
+Synthetic evidence arrays use `(C, Z, Y, X)` layout. Windows use zero-based half-open coordinates `[start, end)`. Traversal is lexicographic `Z, Y, X`, with `X` changing fastest. The milestone 5 private preprocessing tensor instead uses neutral `(C,I,J,K)` notation for unchanged Nibabel voxel-index axes bound to the affine. Mapping `(I,J,K)` into synthetic `(Z,Y,X)` naming and traversal is unresolved and requires a later explicit adapter gate. Overlap is stored as an exact rational relative to ROI size. The only permitted padding is explicit zero padding on the high side of an axis.
 
 ## Quickstart
 
@@ -88,6 +93,9 @@ voxelscope custody plan \
   --registry research/source-registry-v1.json \
   --plan research/acquisition-plan-v1.json
 voxelscope milestone4-public verify --bundle research/milestone-4
+voxelscope preprocess execute --help
+voxelscope preprocess verify --help
+voxelscope milestone5-public verify --help
 voxelscope custody scan-public --root .
 ```
 
@@ -116,11 +124,11 @@ VoxelScope does not currently claim that:
 - Any numerical drift threshold is clinically acceptable.
 - Any backend is safe for clinical or patient-specific use.
 
-See [the real-data readiness record](docs/real-data-readiness-v1.md), [active one-volume feasibility protocol](docs/one-volume-feasibility-protocol-v2.md), [historical protocol v1](docs/one-volume-feasibility-protocol-v1.md), and [private custody workflow](docs/private-custody-workflow-v1.md) before proposing real-data work.
+See [the preprocessing adapter contract](docs/preprocessing-adapter-v1.md), [real-data readiness record](docs/real-data-readiness-v1.md), [active one-volume feasibility protocol](docs/one-volume-feasibility-protocol-v2.md), [historical protocol v1](docs/one-volume-feasibility-protocol-v1.md), and [private custody workflow](docs/private-custody-workflow-v1.md) before proposing real-data work.
 
 ## Next gate
 
-Specify and independently review the exact preprocessing adapter without loading the model. It must bind channel stacking, source geometry handling, nonzero channel-wise normalization, output inversion, and the separation between source labels `0/1/2/3` and model output labels `0/1/2/4`. Model-training overlap must remain unresolved or be explicitly bounded. No inference, GPU provisioning, or spend is authorized.
+Independently review the frozen preprocessing adapter, then obtain explicit approval bound to adapter plan SHA-256 `74d0214092b37502911b334fa11380cfd077aa10277425e532e6e861377f519f` and the existing private custody receipt identity. Execute once without network, verify the private outputs, and publish only sanitized gate evidence. The mapping from private `(I,J,K)` voxel axes into synthetic `(Z,Y,X)` traversal remains a later explicit gate. Model-training overlap remains unresolved. No model load, inference, GPU provisioning, or spend is authorized.
 
 ## License
 
