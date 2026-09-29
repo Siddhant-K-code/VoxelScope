@@ -16,6 +16,7 @@ import nibabel as nib
 import numpy as np
 import pytest
 
+import voxelscope.cli as cli_module
 import voxelscope.milestone4_evidence as milestone4_module
 import voxelscope.one_volume_custody as custody_module
 from voxelscope.canonical import EvidenceError, load_json, sha256_file, write_json
@@ -613,16 +614,23 @@ def test_one_volume_cli_redacts_private_path_on_failure(
 
 
 def test_one_volume_cli_redacts_private_path_on_io_failure(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    missing_record = tmp_path / "private" / "missing-record.json"
+    private_path = tmp_path / "private" / "failure"
+
+    def fail(*args: object, **kwargs: object) -> None:
+        raise OSError(f"simulated failure at {private_path}")
+
+    monkeypatch.setattr(cli_module, "acquire_trusted_one_volume", fail)
     assert (
         main(
             [
                 "one-volume-custody",
                 "acquire",
                 "--record",
-                str(missing_record),
+                str(DECISION),
                 "--plan",
                 str(PLAN),
                 "--root",
@@ -632,12 +640,12 @@ def test_one_volume_cli_redacts_private_path_on_io_failure(
                 "--allow-network",
             ]
         )
-        == 2
+        == 1
     )
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert captured.err == "ERROR unsafe_path\n"
-    assert str(tmp_path) not in captured.err
+    assert captured.err == "ERROR io_error\n"
+    assert str(private_path) not in captured.err
 
 
 @pytest.mark.skipif(os.name == "nt", reason="private custody fails closed on Windows")
