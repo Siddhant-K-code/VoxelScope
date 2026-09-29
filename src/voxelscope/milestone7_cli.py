@@ -1,0 +1,162 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Offline CLI for milestone 7 private window qualification."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import stat
+import sys
+from collections.abc import Sequence
+from pathlib import Path
+from typing import Any
+
+from .canonical import EvidenceError, load_json_bytes
+from .milestone7_evidence import (
+    build_milestone7_public_bundle,
+    qualify_synthetic_fixtures,
+    verify_milestone7_public_bundle,
+)
+from .records import require_object, require_string, strict_fields
+from .window_execution import (
+    execute_window_qualification,
+    verify_window_qualification,
+    verify_window_refusal,
+)
+
+_MAX_PRIVATE_AUTHORIZATION_BYTES = 4096
+
+
+def _repository_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _private_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--plan", type=Path, required=True)
+    parser.add_argument("--authorization-fd", type=int, required=True)
+
+
+def _read_private_authorization(descriptor: int) -> tuple[Path, dict[str, str]]:
+    if descriptor < 0:
+        raise EvidenceError("unsafe_authorization_fd", "descriptor must be nonnegative")
+    metadata = os.fstat(descriptor)
+    if not (stat.S_ISREG(metadata.st_mode) or stat.S_ISFIFO(metadata.st_mode)):
+        raise EvidenceError("unsafe_authorization_fd", "regular file or pipe required")
+    if (
+        os.name != "nt"
+        and stat.S_ISREG(metadata.st_mode)
+        and (metadata.st_uid != os.getuid() or stat.S_IMODE(metadata.st_mode) & 0o077)
+    ):
+        raise EvidenceError("private_authorization_permissions", "owner-only input required")
+    chunks: list[bytes] = []
+    size = 0
+    while chunk := os.read(descriptor, _MAX_PRIVATE_AUTHORIZATION_BYTES + 1 - size):
+        size += len(chunk)
+        if size > _MAX_PRIVATE_AUTHORIZATION_BYTES:
+            raise EvidenceError("private_authorization_limit", "authorization is too large")
+        chunks.append(chunk)
+    value = strict_fields(
+        require_object(load_json_bytes(b"".join(chunks)), "private authorization"),
+        {
+            "approve_plan_sha256",
+            "approve_preprocessing_report_sha256",
+            "approve_preprocessing_snapshot_sha256",
+            "root",
+        },
+        "private authorization",
+    )
+    return (
+        Path(require_string(value["root"], "root")),
+        {
+            "approve_plan_sha256": require_string(
+                value["approve_plan_sha256"],
+                "approve_plan_sha256",
+            ),
+            "approve_preprocessing_report_sha256": require_string(
+                value["approve_preprocessing_report_sha256"],
+                "approve_preprocessing_report_sha256",
+            ),
+            "approve_preprocessing_snapshot_sha256": require_string(
+                value["approve_preprocessing_snapshot_sha256"],
+                "approve_preprocessing_snapshot_sha256",
+            ),
+        },
+    )
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="python -m voxelscope.milestone7_cli")
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    commands.add_parser("synthetic-qualify")
+    _private_arguments(commands.add_parser("private-execute"))
+    _private_arguments(commands.add_parser("private-verify"))
+    _private_arguments(commands.add_parser("private-refusal"))
+
+    public_build = commands.add_parser("public-build")
+    public_build.add_argument("--plan", type=Path, required=True)
+    public_build.add_argument("--output", type=Path, required=True)
+
+    public_verify = commands.add_parser("public-verify")
+    public_verify.add_argument("--bundle", type=Path, required=True)
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = _parser().parse_args(argv)
+    repository_root = _repository_root()
+    try:
+        if args.command == "synthetic-qualify":
+            success_count, refusal_count = qualify_synthetic_fixtures()
+            print(
+                "synthetic_window_status=go "
+                f"fixture_count={success_count} refusal_fixture_count={refusal_count}"
+            )
+            print("private_data_accessed=false inference_authorized=false")
+        elif args.command in {"private-execute", "private-verify", "private-refusal"}:
+            private_root, approvals = _read_private_authorization(args.authorization_fd)
+            keywords: dict[str, Any] = {
+                **approvals,
+                "repository_root": repository_root,
+            }
+            if args.command == "private-execute":
+                execute_window_qualification(args.plan, private_root, **keywords)
+                print("private_window_status=go windows_persisted=false")
+            elif args.command == "private-verify":
+                verify_window_qualification(args.plan, private_root, **keywords)
+                print("private_window_verification=go windows_persisted=false")
+            else:
+                refusal = verify_window_refusal(args.plan, private_root, **keywords)
+                print(f"private_window_status=refused error_code={refusal.error_code}")
+            print("model_loaded=false inference_run=false inference_authorized=false")
+        elif args.command == "public-build":
+            digest = build_milestone7_public_bundle(
+                args.plan,
+                args.output,
+                repository_root=repository_root,
+            )
+            print(f"public_evidence_status=go bundle_sha256={digest}")
+            print("private_data_accessed=false inference_authorized=false")
+        elif args.command == "public-verify":
+            digest = verify_milestone7_public_bundle(
+                args.bundle,
+                repository_root=repository_root,
+            )
+            print(f"verified_milestone7_public_bundle_sha256={digest}")
+            print("private_data_accessed=false inference_authorized=false")
+        else:
+            raise EvidenceError("invalid_command", "unsupported command")
+    except EvidenceError as exc:
+        print(f"ERROR {exc.code}", file=sys.stderr)
+        return 2
+    except (TypeError, KeyError, ValueError, ArithmeticError):
+        print("ERROR malformed_evidence", file=sys.stderr)
+        return 2
+    except OSError:
+        print("ERROR io_error", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

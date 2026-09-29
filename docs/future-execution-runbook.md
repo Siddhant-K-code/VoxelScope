@@ -4,7 +4,7 @@
 
 This is a non-executable planning document. It does not authorize medical-data acquisition, file inspection, model loading, inference, GPU or MPS execution, cloud provisioning, or spending.
 
-Milestones 3 through 6 establish:
+Milestones 3 through 7 establish:
 
 - The official MONAI `brats_mri_segmentation` 0.5.2 model identity is pinned.
 - The model archive is privately acquired and hash-verified without extraction or loading.
@@ -15,6 +15,8 @@ Milestones 3 through 6 establish:
 - The neutral preprocessing positions `(I,J,K)` bind unchanged to model spatial positions `(D,H,W)`.
 - The ROI, overlap, scan interval, final-anchor, and last-axis-fastest traversal contracts are pinned to immutable MONAI, model-zoo, and PyTorch source identities.
 - MONAI symmetric padding and crop are distinct from the legacy VoxelScope high-side-only padded path.
+- Two independent private window materialization paths are implemented with exact streamed byte comparison and bounded terminal evidence.
+- Milestone 7 public evidence is synthetic-only; the private adapter has not been run against the Milestone 5 snapshot.
 - Real-data inference remains NO-GO.
 
 ## Model custody state
@@ -86,6 +88,21 @@ The canonical public identities are:
 - report SHA-256 `381083f12182689057fac91c804117e6cd23c7dd6ebbcae0a64f5ff9b07d645f`;
 - closed public bundle SHA-256 `76895b2af591364156ac021ad482d2ed72fd96ad62f33042a4545238c587caa4`.
 
+## Private window execution adapter
+
+Milestone 7 implements, but does not privately execute, the next qualification gate. The adapter:
+
+1. Requires one explicit approval bound to the exact public adapter plan and exact private Milestone 5 report and snapshot identities.
+2. Publishes a durable attempt marker before reading the approved private preprocessing report or tensor.
+3. Verifies the closed Milestone 5 snapshot, stages the reference tensor through a no-clobber immutable copy, and refuses replacement races.
+4. Materializes every window independently by full symmetric pad plus slice and by direct source intersection plus local zero padding.
+5. Requires identical little-endian float32 bytes in `K`-fastest order and verifies finite values, anchors, starts, padded extent, local padding, intersections, coverage, crop geometry, channel order, and label exclusion.
+6. Persists only a bounded private ledger, report, and one terminal completion or refusal event. Window tensors are never retained.
+
+The public plan is [`research/window-execution-plan-v1.json`](../research/window-execution-plan-v1.json), SHA-256 `cb90fedd3fd44cac78b6a5ab97662dca9f0ef4db1d57eecc9be02489aef47710`. The synthetic-only closed public bundle is [`research/milestone-7`](../research/milestone-7), SHA-256 `7a3c395ca753e106c942fc169a5496227a54fde80d1caa6ce2e0f8dc44ebcfc7`.
+
+Private execution remains unauthorized. A later operator action must supply the privately held Milestone 5 report and snapshot identities through the CLI's bounded owner-private authorization file descriptor, never through command-line arguments. Those identities and the private root path must never be copied into committed records, shell history, command transcripts, process arguments, screenshots, issues, or pull requests.
+
 ## Subject overlap gate
 
 The model was trained on BraTS 2018. The selected OpenNeuro cohort is described as a separate collection acquired from 2018 through 2025, but the selected case acquisition date and the model's exact training roster are not available in the public contract.
@@ -121,7 +138,7 @@ The future order is PyTorch FP32 reference and exact repeat, PyTorch AMP, Tensor
 
 Real execution remains blocked on:
 
-- A private window-execution adapter using the reviewed symmetric positional contract.
+- A separate explicit authorization to run the reviewed private window-execution adapter against the exact Milestone 5 snapshot.
 - Source-mask and model-output semantic mapping review.
 - Subject-overlap resolution or an approved output-preservation-only bound.
 - Runtime image, library, CUDA, driver, and backend identities.

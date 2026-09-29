@@ -21,6 +21,8 @@ custody-validate:
 	uv run voxelscope milestone5-public verify --bundle research/milestone-5
 	uv run python -m voxelscope.milestone6_cli window-bridge --plan research/window-bridge-plan-v1.json --report research/window-bridge-report-v1.json
 	uv run python -m voxelscope.milestone6_cli public-verify --bundle research/milestone-6
+	uv run python -m voxelscope.milestone7_cli synthetic-qualify
+	uv run python -m voxelscope.milestone7_cli public-verify --bundle research/milestone-7
 	uv run voxelscope custody scan-public --root .
 
 demo:
