@@ -35,7 +35,7 @@ def _reindex(root: Path) -> None:
     sums = "".join(
         f"{sha256_file(root / relative)}  {relative}\n" for relative in sorted(PAYLOAD_PATHS)
     )
-    (root / "SHA256SUMS").write_text(sums, encoding="ascii")
+    (root / "SHA256SUMS").write_bytes(sums.encode("ascii"))
     write_json(
         root / "bundle.json",
         {
@@ -52,7 +52,7 @@ def _reindex(root: Path) -> None:
         },
     )
     digest = sha256_file(root / "bundle.json")
-    (root / "bundle.sha256").write_text(f"{digest}  bundle.json\n", encoding="ascii")
+    (root / "bundle.sha256").write_bytes(f"{digest}  bundle.json\n".encode("ascii"))
 
 
 def test_committed_milestone6_bundle_is_trusted() -> None:
