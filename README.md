@@ -10,9 +10,11 @@ VoxelScope is research-only software. It does not provide diagnosis, treatment, 
 
 ## Current status
 
-Milestone 4 acquired the eight objects in the approved OpenNeuro `ds007045` v2.0.1 plan into owner-private custody through one no-retry attempt. All expected sizes and source-published hashes matched. The five medical files passed the preregistered bounded NIfTI structure, finite-value, mask-domain, and exact cross-file geometry gates. Milestone 5 then consumed one explicit offline approval for the exact preprocessing adapter. Four image channels were processed in T1c, T1, T2, and FLAIR order by two independent implementations. The private outputs passed the frozen tolerance, finite-output, geometry-preservation, label-exclusion, closed-snapshot, and replay checks. The official MONAI `brats_mri_segmentation` 0.5.2 archive remains separately verified without extraction or model loading.
+Milestone 4 acquired the eight objects in the approved OpenNeuro `ds007045` v2.0.1 plan into owner-private custody through one no-retry attempt. All expected sizes and source-published hashes matched. The five medical files passed the preregistered bounded NIfTI structure, finite-value, mask-domain, and exact cross-file geometry gates. Milestone 5 then consumed one explicit offline approval for the exact preprocessing adapter. Four image channels were processed in T1c, T1, T2, and FLAIR order by two independent implementations. The private outputs passed the frozen tolerance, finite-output, geometry-preservation, label-exclusion, closed-snapshot, and replay checks.
 
-The project is still **NO-GO** for real-data inference. Preprocessing GO establishes a private `(C,I,J,K)` tensor contract over unchanged Nibabel voxel-index axes. Mapping those axes into VoxelScope's synthetic `(Z,Y,X)` traversal convention remains unresolved. Source-label versus model-output semantics, model-training overlap, runtime image, host and budget authorization, and the explicit inference start gate also remain unresolved. The project has not loaded a model, run inference, used a GPU, provisioned cloud resources, authorized spend, or measured diagnostic accuracy.
+Milestone 6 now proves the public positional bridge from preprocessing `(C,I,J,K)` to model input `(N,C,D,H,W)`: `I -> D`, `J -> H`, and `K -> W`, with no transpose, reorientation, resampling, affine relabeling, or anatomical-direction claim. The pinned ROI is `(240,240,160)`, overlap is one half, traversal is lexicographic `I,J,K` with `K` changing fastest, and final anchors and coverage agree with an independent oracle across asymmetric synthetic cases. MONAI's symmetric padding and crop behavior are pinned separately from VoxelScope's legacy high-side-only padding.
+
+The project is still **NO-GO** for real-data inference. The legacy engine's unpadded positional enumeration is GO, but its general padded extraction is not equivalent to MONAI and must not be reused for real inference. Source-label versus model-output semantics, model-training overlap, runtime image, host and budget authorization, and the explicit inference start gate also remain unresolved. The official MONAI `brats_mri_segmentation` 0.5.2 archive remains verified without extraction or model loading. The project has not loaded a model, run inference, used a GPU, provisioned cloud resources, authorized spend, or measured diagnostic accuracy.
 
 The current package provides:
 
@@ -31,6 +33,9 @@ The current package provides:
 - A repository scan for model weights, medical images, subject identifiers, credentials, private paths, and private receipts.
 - A role-driven, no-spatial-transform preprocessing adapter with a one-shot authorization bound to the adapter plan and custody receipt.
 - Direct float32 NumPy normalization and an independent chunked Welford implementation with a frozen comparison tolerance.
+- A source-pinned positional bridge from neutral `I,J,K` axes to model `D,H,W` positions.
+- Independent final-anchor, traversal, coverage, symmetric-padding, crop, and legacy-bundle checks over asymmetric synthetic fixtures.
+- A closed milestone 6 public evidence bundle that records the legacy general padded path as NO-GO.
 
 ## Architecture
 
@@ -55,11 +60,15 @@ src/voxelscope/
   preprocessing_records.py  Typed adapter plan, report, and refusal records
   preprocessing.py  One-shot dual-implementation private preprocessing
   milestone5_evidence.py  Sanitized preprocessing evidence
+  window_bridge_records.py  Strict positional bridge plan, report, and refusal records
+  window_bridge.py  Independent window oracle and MONAI positional padding proof
+  window_bridge_contract.py  Trusted milestone 6 plan and report identities
+  milestone6_evidence.py  Sanitized positional bridge evidence
   custody.py      Private acquisition, archive verification, and public scans
   cli.py         Offline command-line interface
 ```
 
-Synthetic evidence arrays use `(C, Z, Y, X)` layout. Windows use zero-based half-open coordinates `[start, end)`. Traversal is lexicographic `Z, Y, X`, with `X` changing fastest. The milestone 5 private preprocessing tensor instead uses neutral `(C,I,J,K)` notation for unchanged Nibabel voxel-index axes bound to the affine. Mapping `(I,J,K)` into synthetic `(Z,Y,X)` naming and traversal is unresolved and requires a later explicit adapter gate. Overlap is stored as an exact rational relative to ROI size. The only permitted padding is explicit zero padding on the high side of an axis.
+Historical synthetic evidence arrays use `(C, Z, Y, X)` layout. Those letters are synthetic coordinate names, not anatomical directions. Milestone 6 binds the unchanged preprocessing positions `(I,J,K)` to window positions `(S0,S1,S2)` and model positions `(D,H,W)` without renaming them anatomically. Windows use zero-based half-open coordinates `[start, end)`, exact rational overlap, and last-axis-fastest traversal. The historical engine still uses explicit high-side zero padding; MONAI 1.4.0 uses symmetric constant-zero padding for undersized inputs. The policies are not generally equivalent.
 
 ## Quickstart
 
@@ -94,6 +103,10 @@ voxelscope custody plan \
   --plan research/acquisition-plan-v1.json
 voxelscope milestone4-public verify --bundle research/milestone-4
 voxelscope milestone5-public verify --bundle research/milestone-5
+python -m voxelscope.milestone6_cli window-bridge \
+  --plan research/window-bridge-plan-v1.json \
+  --report research/window-bridge-report-v1.json
+python -m voxelscope.milestone6_cli public-verify --bundle research/milestone-6
 voxelscope preprocess execute --help
 voxelscope preprocess verify --help
 voxelscope milestone5-public verify --help
@@ -125,11 +138,11 @@ VoxelScope does not currently claim that:
 - Any numerical drift threshold is clinically acceptable.
 - Any backend is safe for clinical or patient-specific use.
 
-See [the preprocessing adapter contract](docs/preprocessing-adapter-v1.md), [real-data readiness record](docs/real-data-readiness-v1.md), [active one-volume feasibility protocol](docs/one-volume-feasibility-protocol-v2.md), [historical protocol v1](docs/one-volume-feasibility-protocol-v1.md), and [private custody workflow](docs/private-custody-workflow-v1.md) before proposing real-data work.
+See [the positional window bridge record](docs/milestone-6-window-bridge-readiness-v1.md), [the preprocessing adapter contract](docs/preprocessing-adapter-v1.md), [real-data readiness record](docs/real-data-readiness-v1.md), [active one-volume feasibility protocol](docs/one-volume-feasibility-protocol-v2.md), [historical protocol v1](docs/one-volume-feasibility-protocol-v1.md), and [private custody workflow](docs/private-custody-workflow-v1.md) before proposing real-data work.
 
 ## Next gate
 
-Prospectively define and independently review the mapping from private `(I,J,K)` voxel-index axes into VoxelScope's synthetic `(Z,Y,X)` traversal contract. The mapping must bind affine interpretation, window coordinates, padding, output inversion, and evidence identities without silently transposing or relabeling axes. Model-training overlap and source-label versus model-output semantics remain unresolved. No model load, inference, GPU provisioning, or spend is authorized.
+Prospectively define and independently review a private window-execution adapter that consumes the approved preprocessing snapshot, applies the pinned symmetric positional padding and crop contract, and emits a closed private window ledger without loading the model. It must not route real data through the legacy high-side padded path. Model-training overlap and source-label versus model-output semantics remain unresolved. No model load, inference, GPU provisioning, or spend is authorized.
 
 ## License
 

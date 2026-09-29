@@ -4,6 +4,7 @@
 *.ndjson text eol=lf
 *.py text eol=lf
 *.SHA256SUMS text eol=lf
+SHA256SUMS text eol=lf
 *.sha256 text eol=lf
 *.txt text eol=lf
 uv.lock text eol=lf
