@@ -14,8 +14,8 @@ This milestone adds the offline adapter, strict records, synthetic tests, and sa
 - Milestone 6 report SHA-256: `381083f12182689057fac91c804117e6cd23c7dd6ebbcae0a64f5ff9b07d645f`
 - Milestone 6 public bundle SHA-256: `76895b2af591364156ac021ad482d2ed72fd96ad62f33042a4545238c587caa4`
 - Legacy synthetic bundle SHA-256: `c7f42adb2ec3d3f6ea51a7574e7dfc03e5198954ef6e25b6e41fe1d2517bd15c`
-- Milestone 7 adapter plan SHA-256: `cb90fedd3fd44cac78b6a5ab97662dca9f0ef4db1d57eecc9be02489aef47710`
-- Milestone 7 public bundle SHA-256: `7a3c395ca753e106c942fc169a5496227a54fde80d1caa6ce2e0f8dc44ebcfc7`
+- Milestone 7 adapter plan SHA-256: `a9a6d123028269e534b48fd1bfe073972e2d4e4c338cbacde98aa6eb8cb35a52`
+- Milestone 7 public bundle SHA-256: `3625597508b326497e31688c73ed1deff481fb198a36923f2fb44c921239b2f6`
 
 Private Milestone 5 report, snapshot, receipt, tensor, and approval identities are deliberately absent from every committed artifact. A later operator supplies the private root and approved report and snapshot digests through a bounded owner-private authorization file descriptor, not command-line arguments. They remain inside owner-private authorization, attempt, report, and terminal records.
 

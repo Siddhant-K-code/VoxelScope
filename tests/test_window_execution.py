@@ -63,6 +63,16 @@ PLAN = ROOT / "research/window-execution-plan-v1.json"
 M5_PLAN = ROOT / "research/preprocessing-adapter-plan-v1.json"
 
 
+@pytest.fixture(autouse=True)
+def _trusted_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+    plan = WindowExecutionPlan.from_dict(load_json(PLAN))
+    monkeypatch.setattr(
+        execution_module,
+        "_runtime_identity",
+        lambda repository_root: plan.runtime_identity,
+    )
+
+
 def _values(shape: tuple[int, int, int]) -> np.ndarray[Any, np.dtype[np.float32]]:
     i, j, k = np.indices(shape, dtype=np.float32)
     base = i * np.float32(10000) + j * np.float32(100) + k + np.float32(1)

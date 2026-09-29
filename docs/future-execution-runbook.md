@@ -99,7 +99,7 @@ Milestone 7 implements, but does not privately execute, the next qualification g
 5. Requires identical little-endian float32 bytes in `K`-fastest order and verifies finite values, anchors, starts, padded extent, local padding, intersections, coverage, crop geometry, channel order, and label exclusion.
 6. Persists only a bounded private ledger, report, and one terminal completion or refusal event. Window tensors are never retained.
 
-The public plan is [`research/window-execution-plan-v1.json`](../research/window-execution-plan-v1.json), SHA-256 `cb90fedd3fd44cac78b6a5ab97662dca9f0ef4db1d57eecc9be02489aef47710`. The synthetic-only closed public bundle is [`research/milestone-7`](../research/milestone-7), SHA-256 `7a3c395ca753e106c942fc169a5496227a54fde80d1caa6ce2e0f8dc44ebcfc7`.
+The public plan is [`research/window-execution-plan-v1.json`](../research/window-execution-plan-v1.json), SHA-256 `a9a6d123028269e534b48fd1bfe073972e2d4e4c338cbacde98aa6eb8cb35a52`. The synthetic-only closed public bundle is [`research/milestone-7`](../research/milestone-7), SHA-256 `3625597508b326497e31688c73ed1deff481fb198a36923f2fb44c921239b2f6`.
 
 Private execution remains unauthorized. A later operator action must supply the privately held Milestone 5 report and snapshot identities through the CLI's bounded owner-private authorization file descriptor, never through command-line arguments. Those identities and the private root path must never be copied into committed records, shell history, command transcripts, process arguments, screenshots, issues, or pull requests.
 

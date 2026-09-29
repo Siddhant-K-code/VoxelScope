@@ -728,6 +728,9 @@ def _copy_immutable_input(
         if os.name != "nt":
             os.fchmod(destination_descriptor, 0o400)
     except BaseException:
+        if destination_descriptor >= 0:
+            os.close(destination_descriptor)
+            destination_descriptor = -1
         destination.unlink(missing_ok=True)
         raise
     finally:
