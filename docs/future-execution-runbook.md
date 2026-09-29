@@ -4,7 +4,7 @@
 
 This is a non-executable planning document. It does not authorize medical-data acquisition, file inspection, model loading, inference, GPU or MPS execution, cloud provisioning, or spending.
 
-Milestones 3 and 4 establish:
+Milestones 3 through 6 establish:
 
 - The official MONAI `brats_mri_segmentation` 0.5.2 model identity is pinned.
 - The model archive is privately acquired and hash-verified without extraction or loading.
@@ -12,6 +12,9 @@ Milestones 3 and 4 establish:
 - The exact OpenNeuro plan was acquired once into owner-private custody.
 - All eight content identities and the five-file bounded NIfTI structural gate are GO.
 - A sanitized closed public bundle records only gate states, counts, synthetic fixtures, and non-claims.
+- The neutral preprocessing positions `(I,J,K)` bind unchanged to model spatial positions `(D,H,W)`.
+- The ROI, overlap, scan interval, final-anchor, and last-axis-fastest traversal contracts are pinned to immutable MONAI, model-zoo, and PyTorch source identities.
+- MONAI symmetric padding and crop are distinct from the legacy VoxelScope high-side-only padded path.
 - Real-data inference remains NO-GO.
 
 ## Model custody state
@@ -63,6 +66,26 @@ The source mask uses 0 for background, 1 for necrotic core, 2 for non-enhancing 
 
 The label remains custody-only unless a later protocol proves semantic equivalence and authorizes its use. Output-preservation comparisons between runtime executions do not require a reference-label accuracy metric.
 
+## Positional window bridge
+
+Milestone 6 used public source identities and asymmetric synthetic fixtures only. It did not read a private tensor or record a private shape, affine, orientation, voxel value, tensor hash, or real window count.
+
+The bridge proves:
+
+1. Preprocessing positions `I`, `J`, and `K` map directly to model positions `D`, `H`, and `W`.
+2. ROI components `(240,240,160)` retain that order.
+3. Half-overlap intervals, final anchors, coverage, constant blending, and `K`-fastest traversal agree with an independent oracle.
+4. MONAI pads undersized axes symmetrically and crops accumulated output back to the original positional extent.
+5. Historical synthetic `Z,Y,X` names remain synthetic-only labels and the legacy bundle remains hash-identical.
+
+The legacy VoxelScope engine pads only the high side. Its unpadded enumeration is positionally compatible, but its general padded extraction is not MONAI-equivalent and is **NO-GO** for real inference. A later private adapter must use the milestone 6 symmetric contract and must preserve the neutral axis names in evidence.
+
+The canonical public identities are:
+
+- plan SHA-256 `e50352f949a7d87470adf186f729861c770a99e4bc2b4fdb49eae490b101d048`;
+- report SHA-256 `381083f12182689057fac91c804117e6cd23c7dd6ebbcae0a64f5ff9b07d645f`;
+- closed public bundle SHA-256 `76895b2af591364156ac021ad482d2ed72fd96ad62f33042a4545238c587caa4`.
+
 ## Subject overlap gate
 
 The model was trained on BraTS 2018. The selected OpenNeuro cohort is described as a separate collection acquired from 2018 through 2025, but the selected case acquisition date and the model's exact training roster are not available in the public contract.
@@ -98,7 +121,7 @@ The future order is PyTorch FP32 reference and exact repeat, PyTorch AMP, Tensor
 
 Real execution remains blocked on:
 
-- `(I,J,K)` to `(Z,Y,X)` traversal mapping and evidence review.
+- A private window-execution adapter using the reviewed symmetric positional contract.
 - Source-mask and model-output semantic mapping review.
 - Subject-overlap resolution or an approved output-preservation-only bound.
 - Runtime image, library, CUDA, driver, and backend identities.
