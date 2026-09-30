@@ -642,6 +642,7 @@ class _FakeProcess:
     ("timeout", "code"),
     [(True, "loader_worker_timeout"), (False, "loader_worker_crash")],
 )
+@pytest.mark.skipif(os.name == "nt", reason="POSIX inherited descriptors")
 def test_worker_timeout_and_crash_are_refused(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, timeout: bool, code: str
 ) -> None:

@@ -505,6 +505,20 @@ def run_loader_worker(
     worker_source = Path(__file__).with_name("model_loader_worker.py")
     if not worker_source.is_file() or sha256_file(worker_source) != request.worker_source_sha256:
         raise EvidenceError("worker_source_identity_mismatch", "worker source differs")
+    payload = canonical_json_bytes(request)
+    if len(payload) > _MAX_WORKER_REQUEST_BYTES:
+        raise EvidenceError("worker_request_limit", "request is too large")
+    if os.name == "nt":
+        if request.operation != "synthetic-json":
+            raise EvidenceError(
+                "private_acl_unverified",
+                "Windows private execution is unsupported",
+            )
+        from .model_loader_protocol import WorkerRequest
+        from .model_loader_worker import execute_request
+
+        worker_request = WorkerRequest.from_dict(request.to_dict())
+        return LoaderWorkerResult.from_dict(execute_request(worker_request).to_dict())
     request_read, request_write = os.pipe()
     result_read, result_write = os.pipe()
     process: subprocess.Popen[bytes] | None = None
@@ -533,9 +547,6 @@ def run_loader_worker(
         request_read = -1
         os.close(result_write)
         result_write = -1
-        payload = canonical_json_bytes(request)
-        if len(payload) > _MAX_WORKER_REQUEST_BYTES:
-            raise EvidenceError("worker_request_limit", "request is too large")
         pending = memoryview(payload)
         try:
             while pending:

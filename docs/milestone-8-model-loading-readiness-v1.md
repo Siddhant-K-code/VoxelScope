@@ -25,8 +25,8 @@ The private custody root, receipt digest, filesystem path, and any future extrac
 
 The final Milestone 8 public identities are:
 
-- plan SHA-256 `f467181b0714170c51a6c068a9deec40938a3c6bb6a2bb8a70d67bc9059155f3`;
-- synthetic-only closed public bundle SHA-256 `ea5178e13b3e424e4e0b118625bd20567a070a54399441efccba9f6b921a404c`.
+- plan SHA-256 `61d11ecf19da7ef7fdfaa72803be110699e867d19f2867f33cf3c3f6c453c4a4`;
+- synthetic-only closed public bundle SHA-256 `c0fb658871e5524c3dec63d17b9deba429e1c24faa27aa48af23fe26a314f37b`.
 
 ## Extraction contract
 
