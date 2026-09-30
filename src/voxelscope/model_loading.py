@@ -273,6 +273,8 @@ def _copy_immutable_file(
 def _zip_member_path(info: zipfile.ZipInfo) -> str:
     if info.is_dir() or info.filename.endswith("/"):
         raise EvidenceError("archive_special_member", info.filename)
+    if "\\" in info.filename:
+        raise EvidenceError("unsafe_path", info.filename)
     safe_relative_path(info.filename)
     if PurePosixPath(info.filename).as_posix() != info.filename:
         raise EvidenceError("unsafe_archive_path", info.filename)
@@ -517,7 +519,12 @@ def run_loader_worker(
         from .model_loader_protocol import WorkerRequest
         from .model_loader_worker import execute_request
 
-        worker_request = WorkerRequest.from_dict(request.to_dict())
+        worker_request = WorkerRequest.from_dict(
+            require_object(
+                load_json_bytes(canonical_json_bytes(request)),
+                "loader worker request",
+            )
+        )
         return LoaderWorkerResult.from_dict(execute_request(worker_request).to_dict())
     request_read, request_write = os.pipe()
     result_read, result_write = os.pipe()
