@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Isolated Milestone 8 qualification runtime. This is not installed by ordinary CI.
+--only-binary=:all:
+numpy==1.26.4
+monai==1.4.0
+torch==2.4.0

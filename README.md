@@ -14,9 +14,11 @@ Milestone 4 acquired the eight objects in the approved OpenNeuro `ds007045` v2.0
 
 Milestone 6 now proves the public positional bridge from preprocessing `(C,I,J,K)` to model input `(N,C,D,H,W)`: `I -> D`, `J -> H`, and `K -> W`, with no transpose, reorientation, resampling, affine relabeling, or anatomical-direction claim. The pinned ROI is `(240,240,160)`, overlap is one half, traversal is lexicographic `I,J,K` with `K` changing fastest, and final anchors and coverage agree with an independent oracle across asymmetric synthetic cases. MONAI's symmetric padding and crop behavior are pinned separately from VoxelScope's legacy high-side-only padding.
 
-Milestone 7 adds an implementation-only private window-execution adapter. It places a one-shot marker before any approved private preprocessing read, binds the exact private Milestone 5 report and snapshot identities only inside private authorization and terminal evidence, stages the reference tensor immutably, and compares every window byte-for-byte through two independent paths: full symmetric padding followed by slicing, and direct source intersection with local zero padding. It streams windows into a bounded private ledger rather than persisting them. The committed public evidence contains only synthetic fixture statuses and counts. This milestone did not inspect or execute against private data.
+Milestone 7 then completed one explicitly approved offline private window qualification. It placed a one-shot marker before the private preprocessing read, bound the exact private Milestone 5 report and snapshot identities only inside private authorization and terminal evidence, staged the reference tensor immutably, and compared every window byte-for-byte through two independent paths: full symmetric padding followed by slicing, and direct source intersection with local zero padding. The result and a fresh-descriptor verification were GO; no windows were persisted. The committed public evidence remains synthetic-only, and no private identity, geometry, shape, count, hash, or path is published.
 
-The project is still **NO-GO** for real-data inference. Running the Milestone 7 adapter against the approved private Milestone 5 snapshot requires a separate explicit authorization. The legacy engine's unpadded positional enumeration is GO, but its general padded extraction is not equivalent to MONAI and must not be reused for real inference. Source-label versus model-output semantics, model-training overlap, runtime image, host and budget authorization, and the explicit inference start gate also remain unresolved. The official MONAI `brats_mri_segmentation` 0.5.2 archive remains verified without extraction or model loading. The project has not loaded a model, run inference, used a GPU, provisioned cloud resources, authorized spend, or measured diagnostic accuracy.
+Milestone 8 adds a prospective private model archive extraction and CPU loading gate. It binds the public official archive, checkpoint, config, license, reviewed SegResNet constructor, isolated Linux/Python 3.12/PyTorch 2.4.0/MONAI 1.4.0 runtime, a separately reviewed closed runtime-distribution fingerprint, and prior gate identities. The executor is one-shot and owner-private; extraction is a closed three-member allowlist; the separate loader verifies every installed PyTorch and MONAI distribution file before accepting only `torch.load(..., weights_only=True, map_location="cpu")`, an exact `model` state mapping, strict tensor and architecture agreement, finite CPU parameters, and no forward call. Ordinary CI exercises only synthetic archives and a safe JSON tensor fixture, not the official checkpoint.
+
+The project is still **NO-GO** for private model qualification and real-data inference. Milestone 8 implementation did not access or extract the private archive, deserialize its checkpoint, instantiate or load the official model, run a forward pass, allocate medical-shaped input, use an accelerator or network, provision cloud resources, or authorize spend. A later owner action must separately approve the final exact Milestone 8 plan, private receipt/archive identities, exact interpreter, and reviewed closed PyTorch/MONAI runtime fingerprint through an inherited descriptor. Source-label versus model-output semantics, model-training overlap, inference runtime/host/budget authorization, and the explicit inference start gate also remain unresolved.
 
 The current package provides:
 
@@ -42,6 +44,10 @@ The current package provides:
 - Independent full-padding and direct-intersection materializers with exact streamed byte comparison.
 - A bounded private report/ledger design that persists no windows.
 - A closed milestone 7 public evidence bundle containing synthetic fixture statuses and counts only.
+- A one-shot, allowlist-only private model extraction and CPU loading qualification gate.
+- A fixed reviewed SegResNet constructor with strict weights-only state validation and no forward path.
+- An isolated Linux/Python 3.12/PyTorch 2.4.0/MONAI 1.4.0 qualification requirements artifact.
+- A closed milestone 8 public evidence bundle containing synthetic protocol results and explicit non-actions only.
 
 ## Architecture
 
@@ -75,6 +81,12 @@ src/voxelscope/
   window_execution_contract.py  Trusted milestone 5, 6, 7, and legacy identities
   milestone7_evidence.py  Synthetic-only closed public implementation evidence
   milestone7_cli.py  Separate offline milestone 7 command-line interface
+  model_loading_records.py  Strict Milestone 8 plan, worker, private, and terminal records
+  model_loader_protocol.py  Self-contained typed inherited-FD worker protocol
+  model_loading.py  One-shot allowlist extraction and isolated CPU loader orchestration
+  model_loader_worker.py  Weights-only fixed-constructor CPU loader subprocess
+  milestone8_evidence.py  Synthetic-only closed model-loading evidence
+  milestone8_cli.py  Separate offline Milestone 8 command-line interface
   custody.py      Private acquisition, archive verification, and public scans
   cli.py         Offline command-line interface
 ```
@@ -122,6 +134,10 @@ python -m voxelscope.milestone7_cli synthetic-qualify
 python -m voxelscope.milestone7_cli public-verify --bundle research/milestone-7
 python -m voxelscope.milestone7_cli private-execute --help
 python -m voxelscope.milestone7_cli private-verify --help
+python -m voxelscope.milestone8_cli synthetic-qualify
+python -m voxelscope.milestone8_cli public-verify --bundle research/milestone-8
+python -m voxelscope.milestone8_cli private-execute --help
+python -m voxelscope.milestone8_cli private-verify --help
 voxelscope preprocess execute --help
 voxelscope preprocess verify --help
 voxelscope milestone5-public verify --help
@@ -153,11 +169,11 @@ VoxelScope does not currently claim that:
 - Any numerical drift threshold is clinically acceptable.
 - Any backend is safe for clinical or patient-specific use.
 
-See [the positional window bridge record](docs/milestone-6-window-bridge-readiness-v1.md), [the preprocessing adapter contract](docs/preprocessing-adapter-v1.md), [real-data readiness record](docs/real-data-readiness-v1.md), [active one-volume feasibility protocol](docs/one-volume-feasibility-protocol-v2.md), [historical protocol v1](docs/one-volume-feasibility-protocol-v1.md), and [private custody workflow](docs/private-custody-workflow-v1.md) before proposing real-data work.
+See [the model-loading readiness record](docs/milestone-8-model-loading-readiness-v1.md), [the positional window bridge record](docs/milestone-6-window-bridge-readiness-v1.md), [the preprocessing adapter contract](docs/preprocessing-adapter-v1.md), [real-data readiness record](docs/real-data-readiness-v1.md), [active one-volume feasibility protocol](docs/one-volume-feasibility-protocol-v2.md), [historical protocol v1](docs/one-volume-feasibility-protocol-v1.md), and [private custody workflow](docs/private-custody-workflow-v1.md) before proposing real-data work.
 
 ## Next gate
 
-Prospectively define and independently review a private window-execution adapter that consumes the approved preprocessing snapshot, applies the pinned symmetric positional padding and crop contract, and emits a closed private window ledger without loading the model. It must not route real data through the legacy high-side padded path. Model-training overlap and source-label versus model-output semantics remain unresolved. No model load, inference, GPU provisioning, or spend is authorized.
+Obtain a separate explicit owner approval bound to the final Milestone 8 plan SHA-256 and reviewed private model custody receipt/archive identities, then run the private CPU-only model-loading qualification exactly once. That approval authorizes only the closed extraction and stop-after-load qualification; it does not authorize model input, forward, inference, GPU/MPS, network, cloud, or spend. Model-training overlap and source-label versus model-output semantics remain unresolved.
 
 ## License
 
