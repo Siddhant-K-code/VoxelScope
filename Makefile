@@ -23,6 +23,8 @@ custody-validate:
 	uv run python -m voxelscope.milestone6_cli public-verify --bundle research/milestone-6
 	uv run python -m voxelscope.milestone7_cli synthetic-qualify
 	uv run python -m voxelscope.milestone7_cli public-verify --bundle research/milestone-7
+	uv run python -m voxelscope.milestone8_cli synthetic-qualify
+	uv run python -m voxelscope.milestone8_cli public-verify --bundle research/milestone-8
 	uv run voxelscope custody scan-public --root .
 
 demo:

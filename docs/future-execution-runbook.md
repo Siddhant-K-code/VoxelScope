@@ -4,7 +4,7 @@
 
 This is a non-executable planning document. It does not authorize medical-data acquisition, file inspection, model loading, inference, GPU or MPS execution, cloud provisioning, or spending.
 
-Milestones 3 through 7 establish:
+Milestones 3 through 8 establish:
 
 - The official MONAI `brats_mri_segmentation` 0.5.2 model identity is pinned.
 - The model archive is privately acquired and hash-verified without extraction or loading.
@@ -16,7 +16,10 @@ Milestones 3 through 7 establish:
 - The ROI, overlap, scan interval, final-anchor, and last-axis-fastest traversal contracts are pinned to immutable MONAI, model-zoo, and PyTorch source identities.
 - MONAI symmetric padding and crop are distinct from the legacy VoxelScope high-side-only padded path.
 - Two independent private window materialization paths are implemented with exact streamed byte comparison and bounded terminal evidence.
-- Milestone 7 public evidence is synthetic-only; the private adapter has not been run against the Milestone 5 snapshot.
+- Milestone 7 public evidence is synthetic-only; one separately approved private adapter execution and fresh-descriptor verification completed GO without persisting windows.
+- A one-shot, allowlist-only model archive extraction and CPU loading qualification gate is implemented.
+- The model-loading worker is bound to Linux, Python 3.12, PyTorch 2.4.0, MONAI 1.4.0, an explicitly approved closed runtime-distribution fingerprint, a reviewed SegResNet constructor, strict weights-only state loading, and no forward call.
+- Milestone 8 public evidence is synthetic-only; the private model archive has not been accessed or extracted by this milestone.
 - Real-data inference remains NO-GO.
 
 ## Model custody state
@@ -90,7 +93,7 @@ The canonical public identities are:
 
 ## Private window execution adapter
 
-Milestone 7 implements, but does not privately execute, the next qualification gate. The adapter:
+Milestone 7 implemented and completed one explicitly approved private qualification. The adapter:
 
 1. Requires one explicit approval bound to the exact public adapter plan and exact private Milestone 5 report and snapshot identities.
 2. Publishes a durable attempt marker before reading the approved private preprocessing report or tensor.
@@ -102,6 +105,31 @@ Milestone 7 implements, but does not privately execute, the next qualification g
 The public plan is [`research/window-execution-plan-v1.json`](../research/window-execution-plan-v1.json), SHA-256 `a9a6d123028269e534b48fd1bfe073972e2d4e4c338cbacde98aa6eb8cb35a52`. The synthetic-only closed public bundle is [`research/milestone-7`](../research/milestone-7), SHA-256 `3625597508b326497e31688c73ed1deff481fb198a36923f2fb44c921239b2f6`.
 
 Private execution remains unauthorized. A later operator action must supply the privately held Milestone 5 report and snapshot identities through the CLI's bounded owner-private authorization file descriptor, never through command-line arguments. Those identities and the private root path must never be copied into committed records, shell history, command transcripts, process arguments, screenshots, issues, or pull requests.
+
+## Private model-loading qualification gate
+
+Milestone 8 implements, but does not privately execute, the model archive extraction and loading gate. Its public plan is [`research/model-loading-plan-v1.json`](../research/model-loading-plan-v1.json). Its synthetic-only public evidence is [`research/milestone-8`](../research/milestone-8).
+
+The executor requires one new owner-private authorization bound to the final plan digest, existing private custody receipt digest, public official archive digest, exact isolated Python executable digest, and a separately reviewed closed PyTorch/MONAI runtime-distribution fingerprint. The private root, receipt identity, runtime path, and runtime fingerprint enter through a bounded inherited descriptor, never through command-line arguments or environment variables. The subprocess uses a fixed nonsensitive process argument name while selecting the approved executable separately. The executor writes a durable attempt marker before reading the approved receipt or archive and consumes the authorization on any terminal outcome.
+
+The archive path is immutable-staged and checked against the exact 35,082,630-byte official archive identity. Every archive entry is verified against the already-public closed 13-member manifest. Absolute paths, traversal, duplicates, case collisions, encryption, directories, links, devices, special files, excessive counts, sizes, totals, or compression ratios are refused. Only the Apache license, pinned inference configuration, and `model.pt` checkpoint are extracted into an owner-private staging tree and atomically published.
+
+The worker is a separate isolated subprocess with inherited request and result descriptors, sanitized standard streams and environment, a 120-second timeout, a 2 GiB Linux address-space limit, CPU-only accelerator visibility, and a Python audit-hook network refusal. It parses the inference JSON without dynamic evaluation and constructs only the reviewed `monai.networks.nets.SegResNet` call with fixed arguments. It calls only `torch.load(..., weights_only=True, map_location="cpu")`, accepts exactly a single `model` mapping of plain tensors, compares every key, shape, dtype, layout, and device against the constructed architecture, performs strict state loading, checks all parameters and buffers for finite CPU placement, records bounded aggregate counts privately, and exits. It never calls `forward`, creates model input, compiles, benchmarks, or moves the model to an accelerator.
+
+Ordinary Python 3.12/3.13 CI does not install PyTorch or MONAI. It tests the archive and descriptor protocols with synthetic ZIPs and a safe JSON tensor fixture. Real compatibility with the private official checkpoint is deliberately unknown until the separately authorized run. Any unsupported weights-only encoding, wrapper, runtime mismatch, state mismatch, or resource failure produces a truthful private NO-GO.
+
+Before a future private run:
+
+1. Independently review the final plan and record its exact SHA-256.
+2. Create a Linux Python 3.12 environment from `model-loading-requirements-py312.txt`; do not substitute framework versions.
+3. Confirm the environment is offline and compute the exact Python executable SHA-256.
+4. Review the existing private model custody receipt and official archive identity without copying either path or receipt identity into public artifacts.
+5. Supply the private root, receipt digest, archive digest, plan digest, runtime executable path, and executable digest in one owner-only regular file or pipe attached as the authorization descriptor.
+6. Run `python -m voxelscope.milestone8_cli private-execute --plan research/model-loading-plan-v1.json --authorization-fd <FD>` exactly once.
+7. Treat either a private completion or refusal as terminal. Do not retry under the same authorization.
+8. Keep the extraction manifest, loading report, state observations, and all resulting identities private.
+
+This action, when separately approved, authorizes extraction and stop-after-load qualification only. It does not authorize a medical tensor, model input, forward call, inference, GPU/MPS, network, cloud, spend, or publication of private observations.
 
 ## Subject overlap gate
 
@@ -138,7 +166,7 @@ The future order is PyTorch FP32 reference and exact repeat, PyTorch AMP, Tensor
 
 Real execution remains blocked on:
 
-- A separate explicit authorization to run the reviewed private window-execution adapter against the exact Milestone 5 snapshot.
+- A separate explicit authorization bound to the final Milestone 8 plan, reviewed private model receipt/archive identities, exact interpreter identity, and reviewed runtime-distribution fingerprint.
 - Source-mask and model-output semantic mapping review.
 - Subject-overlap resolution or an approved output-preservation-only bound.
 - Runtime image, library, CUDA, driver, and backend identities.
