@@ -517,7 +517,7 @@ def run_loader_worker(
                 "Windows private execution is unsupported",
             )
         from .model_loader_protocol import WorkerRequest
-        from .model_loader_worker import execute_request
+        from .model_loader_worker import _WorkerProgress, execute_request
 
         worker_request = WorkerRequest.from_dict(
             require_object(
@@ -525,7 +525,16 @@ def run_loader_worker(
                 "loader worker request",
             )
         )
-        return LoaderWorkerResult.from_dict(execute_request(worker_request).to_dict())
+        progress = _WorkerProgress()
+        try:
+            worker_result = execute_request(worker_request, progress)
+        except EvidenceError as exc:
+            worker_result = progress.refusal(exc.code)
+        except (ArithmeticError, KeyError, TypeError, ValueError):
+            worker_result = progress.refusal("malformed_worker_input")
+        except BaseException:
+            worker_result = progress.refusal("loader_worker_interrupted")
+        return LoaderWorkerResult.from_dict(worker_result.to_dict())
     request_read, request_write = os.pipe()
     result_read, result_write = os.pipe()
     process: subprocess.Popen[bytes] | None = None
@@ -580,14 +589,14 @@ def run_loader_worker(
             raise EvidenceError("worker_python_replacement", "worker executable changed")
         if not chunks:
             raise EvidenceError("loader_worker_crash", f"worker exited {return_code}")
-        result = LoaderWorkerResult.from_dict(
+        parsed_result = LoaderWorkerResult.from_dict(
             require_object(load_json_bytes(b"".join(chunks)), "loader worker result")
         )
-        if return_code == 0 and result.status != "go":
+        if return_code == 0 and parsed_result.status != "go":
             raise EvidenceError("loader_worker_protocol_mismatch", "success exit refused")
-        if return_code != 0 and result.status == "go":
+        if return_code != 0 and parsed_result.status == "go":
             raise EvidenceError("loader_worker_protocol_mismatch", "failure exit claimed success")
-        return result
+        return parsed_result
     finally:
         for descriptor in (request_read, request_write, result_read, result_write):
             if descriptor >= 0:

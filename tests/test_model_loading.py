@@ -24,6 +24,7 @@ from voxelscope.custody_records import ArchiveMember
 from voxelscope.milestone8_cli import _read_descriptor_object
 from voxelscope.model_loading import (
     _copy_immutable_file,
+    _zip_member_path,
     execute_model_loading_qualification,
     extract_selected_archive,
     load_model_loading_plan,
@@ -205,7 +206,6 @@ def test_safe_archive_extracts_only_allowlisted_member(tmp_path: Path) -> None:
     [
         ("../escape", "unsafe_path"),
         ("/absolute", "unsafe_path"),
-        ("a\\b", "unsafe_path"),
         ("C:drive", "unsafe_path"),
     ],
 )
@@ -219,6 +219,12 @@ def test_archive_path_escape_is_refused(tmp_path: Path, name: str, code: str) ->
         )
     assert captured.value.code == code
     assert not (tmp_path / "output").exists()
+
+
+def test_archive_backslash_is_refused_before_platform_normalization() -> None:
+    with pytest.raises(EvidenceError) as captured:
+        _zip_member_path(zipfile.ZipInfo("a\\b"))
+    assert captured.value.code == "unsafe_path"
 
 
 def test_archive_duplicate_is_refused(tmp_path: Path) -> None:
