@@ -16,7 +16,7 @@ Milestone 6 now proves the public positional bridge from preprocessing `(C,I,J,K
 
 Milestone 7 then completed one explicitly approved offline private window qualification. It placed a one-shot marker before the private preprocessing read, bound the exact private Milestone 5 report and snapshot identities only inside private authorization and terminal evidence, staged the reference tensor immutably, and compared every window byte-for-byte through two independent paths: full symmetric padding followed by slicing, and direct source intersection with local zero padding. The result and a fresh-descriptor verification were GO; no windows were persisted. The committed public evidence remains synthetic-only, and no private identity, geometry, shape, count, hash, or path is published.
 
-Milestone 8 adds a prospective private model archive extraction and CPU loading gate. It binds the public official archive, checkpoint, config, license, reviewed SegResNet constructor, isolated Linux/Python 3.12/PyTorch 2.4.0/MONAI 1.4.0 runtime, a separately reviewed closed runtime-distribution fingerprint, and prior gate identities. The executor is one-shot and owner-private; extraction is a closed three-member allowlist; the separate loader verifies every installed PyTorch and MONAI distribution file before accepting only `torch.load(..., weights_only=True, map_location="cpu")`, an exact `model` state mapping, strict tensor and architecture agreement, finite CPU parameters, and no forward call. Ordinary CI exercises only synthetic archives and a safe JSON tensor fixture, not the official checkpoint.
+Milestone 8 adds a prospective private model archive extraction and CPU loading gate. Runtime preflight proved the original plan incorrectly treated the PyTorch `v2.4.0` tag commit as the official CPU wheel's source commit, so that plan is superseded and mechanically unexecutable. The corrected v2 plan preserves the tag commit and separately binds the wheel source commit, exact Linux arm64/Python 3.12.14 runtime-build contract, official direct wheel identities, reviewed SegResNet constructor, and prior gate identities. The one-shot executor still requires a separately approved interpreter and closed runtime-distribution fingerprint.
 
 The project is still **NO-GO** for private model qualification and real-data inference. Milestone 8 implementation did not access or extract the private archive, deserialize its checkpoint, instantiate or load the official model, run a forward pass, allocate medical-shaped input, use an accelerator or network, provision cloud resources, or authorize spend. A later owner action must separately approve the final exact Milestone 8 plan, private receipt/archive identities, exact interpreter, and reviewed closed PyTorch/MONAI runtime fingerprint through an inherited descriptor. Source-label versus model-output semantics, model-training overlap, inference runtime/host/budget authorization, and the explicit inference start gate also remain unresolved.
 
@@ -135,7 +135,7 @@ python -m voxelscope.milestone7_cli public-verify --bundle research/milestone-7
 python -m voxelscope.milestone7_cli private-execute --help
 python -m voxelscope.milestone7_cli private-verify --help
 python -m voxelscope.milestone8_cli synthetic-qualify
-python -m voxelscope.milestone8_cli public-verify --bundle research/milestone-8
+python -m voxelscope.milestone8_cli public-verify --bundle research/milestone-8-v2
 python -m voxelscope.milestone8_cli private-execute --help
 python -m voxelscope.milestone8_cli private-verify --help
 voxelscope preprocess execute --help
@@ -169,7 +169,7 @@ VoxelScope does not currently claim that:
 - Any numerical drift threshold is clinically acceptable.
 - Any backend is safe for clinical or patient-specific use.
 
-See [the model-loading readiness record](docs/milestone-8-model-loading-readiness-v1.md), [the positional window bridge record](docs/milestone-6-window-bridge-readiness-v1.md), [the preprocessing adapter contract](docs/preprocessing-adapter-v1.md), [real-data readiness record](docs/real-data-readiness-v1.md), [active one-volume feasibility protocol](docs/one-volume-feasibility-protocol-v2.md), [historical protocol v1](docs/one-volume-feasibility-protocol-v1.md), and [private custody workflow](docs/private-custody-workflow-v1.md) before proposing real-data work.
+See [the corrected model-loading readiness record](docs/milestone-8-model-loading-readiness-v2.md), [the positional window bridge record](docs/milestone-6-window-bridge-readiness-v1.md), [the preprocessing adapter contract](docs/preprocessing-adapter-v1.md), [real-data readiness record](docs/real-data-readiness-v1.md), [active one-volume feasibility protocol](docs/one-volume-feasibility-protocol-v2.md), [historical protocol v1](docs/one-volume-feasibility-protocol-v1.md), and [private custody workflow](docs/private-custody-workflow-v1.md) before proposing real-data work.
 
 ## Next gate
 

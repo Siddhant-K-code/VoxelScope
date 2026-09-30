@@ -49,7 +49,9 @@ from voxelscope.model_loading_records import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-PLAN = ROOT / "research/model-loading-plan-v1.json"
+PLAN = ROOT / "research/model-loading-plan-v2.json"
+SUPERSEDED_PLAN = ROOT / "research/model-loading-plan-v1.json"
+RUNTIME_BUILD = ROOT / "research/model-loading-runtime-build-v1.json"
 
 
 def _member(path: str, payload: bytes, role: str = "synthetic") -> ArchiveMember:
@@ -154,8 +156,52 @@ def test_plan_binds_all_public_model_and_prior_gate_identities() -> None:
     assert plan.milestone6_public_bundle_sha256 == MILESTONE6_PUBLIC_BUNDLE_SHA256
     assert plan.legacy_synthetic_bundle_sha256 == LEGACY_SYNTHETIC_BUNDLE_SHA256
     assert plan.runtime.operating_system == "linux"
-    assert plan.runtime.python_version == "3.12"
+    assert plan.runtime.python_version == "3.12.14"
     assert plan.runtime.torch_version == "2.4.0"
+    assert plan.runtime.pytorch_tag_commit == ("d990dada86a8ad94882b5c23e859b88c0c255bda")
+    assert plan.runtime.pytorch_wheel_source_commit == ("e4ee3be4063b7c430974252fdf7db42273388d86")
+    assert plan.runtime.runtime_build_sha256 == sha256_file(RUNTIME_BUILD)
+
+
+def test_runtime_build_binds_reviewed_official_wheels() -> None:
+    build = load_json(RUNTIME_BUILD)
+    assert build["base_image_digest"] == (
+        "sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea"
+    )
+    assert build["image_digest"] == (
+        "sha256:45fae3e5ee6236b4679a7838ccb01e07a9baaae5d4e99a75fb98c8868997e5f8"
+    )
+    assert build["pytorch_tag_commit"] == ("d990dada86a8ad94882b5c23e859b88c0c255bda")
+    assert build["pytorch_wheel_source_commit"] == ("e4ee3be4063b7c430974252fdf7db42273388d86")
+    wheels = {item["name"]: item for item in build["wheels"]}
+    assert wheels["torch"]["sha256"] == (
+        "ec86351350bbd7abea3436fa6f4230b3b0bbf77a226e44ba461840e204fccd71"
+    )
+    assert wheels["torch"]["size_bytes"] == 89707887
+    assert wheels["monai"]["sha256"] == (
+        "a715ca9ff8a068e36efdd147420f0ff02ead744909e7ea0998f31129c4997c9b"
+    )
+    assert wheels["monai"]["size_bytes"] == 1511882
+
+
+def test_runtime_build_refuses_missing_wheel_size(tmp_path: Path) -> None:
+    build = load_json(RUNTIME_BUILD)
+    del build["wheels"][0]["size_bytes"]
+    candidate_build = tmp_path / "runtime-build.json"
+    write_json(candidate_build, build)
+    plan = loading_module.ModelLoadingPlan.from_dict(load_json(PLAN))
+    with pytest.raises(EvidenceError) as captured:
+        loading_module._verify_runtime_build_contract(candidate_build, plan)
+    assert captured.value.code == "invalid_record"
+
+
+def test_superseded_plan_is_immutable_and_unexecutable() -> None:
+    assert sha256_file(SUPERSEDED_PLAN) == (
+        "48902842a3de6db5efc72f5c499550a92a656459125c18cac785da7407a0d91c"
+    )
+    with pytest.raises(EvidenceError) as captured:
+        load_model_loading_plan(SUPERSEDED_PLAN, repository_root=ROOT)
+    assert captured.value.code == "model_loading_plan_digest_mismatch"
 
 
 def test_plan_tamper_is_refused(tmp_path: Path) -> None:
@@ -171,6 +217,14 @@ def test_plan_tamper_is_refused(tmp_path: Path) -> None:
 def test_runtime_contract_refuses_substitute_framework_version() -> None:
     data = load_json(PLAN)
     data["runtime"]["torch_version"] = "2.5.0"
+    with pytest.raises(EvidenceError) as captured:
+        loading_module.ModelLoadingPlan.from_dict(data)
+    assert captured.value.code == "untrusted_model_runtime"
+
+
+def test_runtime_contract_refuses_tag_commit_as_wheel_source() -> None:
+    data = load_json(PLAN)
+    data["runtime"]["pytorch_wheel_source_commit"] = data["runtime"]["pytorch_tag_commit"]
     with pytest.raises(EvidenceError) as captured:
         loading_module.ModelLoadingPlan.from_dict(data)
     assert captured.value.code == "untrusted_model_runtime"

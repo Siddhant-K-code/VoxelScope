@@ -78,34 +78,45 @@ class WorkerArchitecture:
 @dataclass(frozen=True)
 class WorkerRuntime:
     operating_system: Literal["linux"]
-    python_version: Literal["3.12"]
+    architecture: Literal["arm64"]
+    python_version: Literal["3.12.14"]
     torch_version: Literal["2.4.0"]
-    torch_commit: Literal["d990dada86a8ad94882b5c23e859b88c0c255bda"]
+    pytorch_tag: Literal["v2.4.0"]
+    pytorch_tag_commit: Literal["d990dada86a8ad94882b5c23e859b88c0c255bda"]
+    pytorch_wheel_source_commit: Literal["e4ee3be4063b7c430974252fdf7db42273388d86"]
     monai_version: Literal["1.4.0"]
     monai_commit: Literal["46a5272196a6c2590ca2589029eed8e4d56ff008"]
     device: Literal["cpu"]
     requirements_path: Literal["model-loading-requirements-py312.txt"]
     requirements_sha256: str
+    runtime_build_path: Literal["research/model-loading-runtime-build-v1.json"]
+    runtime_build_sha256: str
 
     def __post_init__(self) -> None:
         if (
             self.operating_system != "linux"
-            or self.python_version != "3.12"
+            or self.architecture != "arm64"
+            or self.python_version != "3.12.14"
             or self.torch_version != "2.4.0"
-            or self.torch_commit != "d990dada86a8ad94882b5c23e859b88c0c255bda"
+            or self.pytorch_tag != "v2.4.0"
+            or self.pytorch_tag_commit != "d990dada86a8ad94882b5c23e859b88c0c255bda"
+            or self.pytorch_wheel_source_commit != "e4ee3be4063b7c430974252fdf7db42273388d86"
             or self.monai_version != "1.4.0"
             or self.monai_commit != "46a5272196a6c2590ca2589029eed8e4d56ff008"
             or self.device != "cpu"
             or self.requirements_path != "model-loading-requirements-py312.txt"
+            or self.runtime_build_path != "research/model-loading-runtime-build-v1.json"
         ):
             raise EvidenceError("untrusted_model_runtime", "runtime identity differs")
         require_sha256(self.requirements_sha256)
+        require_sha256(self.runtime_build_sha256)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> WorkerRuntime:
         data = strict_fields(
             data,
             {
+                "architecture",
                 "device",
                 "monai_commit",
                 "monai_version",
@@ -113,21 +124,36 @@ class WorkerRuntime:
                 "python_version",
                 "requirements_path",
                 "requirements_sha256",
-                "torch_commit",
+                "pytorch_tag",
+                "pytorch_tag_commit",
+                "pytorch_wheel_source_commit",
                 "torch_version",
+                "runtime_build_path",
+                "runtime_build_sha256",
             },
             "WorkerRuntime",
         )
         return cls(
             cast(Any, require_string(data["operating_system"], "operating_system")),
+            cast(Any, require_string(data["architecture"], "architecture")),
             cast(Any, require_string(data["python_version"], "python_version")),
             cast(Any, require_string(data["torch_version"], "torch_version")),
-            cast(Any, require_string(data["torch_commit"], "torch_commit")),
+            cast(Any, require_string(data["pytorch_tag"], "pytorch_tag")),
+            cast(Any, require_string(data["pytorch_tag_commit"], "pytorch_tag_commit")),
+            cast(
+                Any,
+                require_string(
+                    data["pytorch_wheel_source_commit"],
+                    "pytorch_wheel_source_commit",
+                ),
+            ),
             cast(Any, require_string(data["monai_version"], "monai_version")),
             cast(Any, require_string(data["monai_commit"], "monai_commit")),
             cast(Any, require_string(data["device"], "device")),
             cast(Any, require_string(data["requirements_path"], "requirements_path")),
             require_string(data["requirements_sha256"], "requirements_sha256"),
+            cast(Any, require_string(data["runtime_build_path"], "runtime_build_path")),
+            require_string(data["runtime_build_sha256"], "runtime_build_sha256"),
         )
 
 
