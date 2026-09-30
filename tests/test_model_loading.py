@@ -222,8 +222,10 @@ def test_archive_path_escape_is_refused(tmp_path: Path, name: str, code: str) ->
 
 
 def test_archive_backslash_is_refused_before_platform_normalization() -> None:
+    info = zipfile.ZipInfo("safe")
+    info.filename = "a\\b"
     with pytest.raises(EvidenceError) as captured:
-        _zip_member_path(zipfile.ZipInfo("a\\b"))
+        _zip_member_path(info)
     assert captured.value.code == "unsafe_path"
 
 

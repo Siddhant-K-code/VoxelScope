@@ -355,7 +355,11 @@ def extract_selected_archive(
                         for part in relative.parts[:-1]:
                             current /= part
                             os.chmod(current, 0o700)
-                    output_fd = os.open(output_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                    output_fd = os.open(
+                        output_path,
+                        os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
+                        0o600,
+                    )
                 try:
                     with archive.open(info, "r") as source:
                         while chunk := source.read(_COPY_CHUNK_BYTES):
