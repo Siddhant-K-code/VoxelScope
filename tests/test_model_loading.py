@@ -728,18 +728,17 @@ def test_windows_private_execution_fails_closed(
     assert captured.value.code == "private_acl_unverified"
 
 
-def test_private_authorization_descriptor_bound_is_enforced() -> None:
-    read_descriptor, write_descriptor = os.pipe()
+def test_private_authorization_descriptor_bound_is_enforced(tmp_path: Path) -> None:
+    authorization = tmp_path / "authorization.json"
+    authorization.write_bytes(b"x" * 8193)
+    if os.name != "nt":
+        os.chmod(authorization, 0o600)
+    descriptor = os.open(authorization, os.O_RDONLY)
     try:
-        os.write(write_descriptor, b"x" * 8193)
-        os.close(write_descriptor)
-        write_descriptor = -1
         with pytest.raises(EvidenceError) as captured:
-            _read_descriptor_object(read_descriptor)
+            _read_descriptor_object(descriptor)
     finally:
-        os.close(read_descriptor)
-        if write_descriptor >= 0:
-            os.close(write_descriptor)
+        os.close(descriptor)
     assert captured.value.code == "private_authorization_limit"
 
 
