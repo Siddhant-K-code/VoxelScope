@@ -67,7 +67,10 @@ from .one_volume_custody import (
     _write_private_json_no_clobber,
 )
 from .records import (
+    require_int,
+    require_list,
     require_object,
+    require_string,
     strict_fields,
 )
 
@@ -108,6 +111,7 @@ def load_model_loading_plan(
         ("research/window-execution-plan-v1.json", MILESTONE7_PLAN_SHA256),
         ("research/milestone-7/bundle.json", MILESTONE7_PUBLIC_BUNDLE_SHA256),
         (plan.runtime.requirements_path, plan.runtime.requirements_sha256),
+        (plan.runtime.runtime_build_path, plan.runtime.runtime_build_sha256),
     )
     for relative, expected in upstream:
         source = ensure_no_symlink(root, safe_relative_path(relative))
@@ -117,7 +121,68 @@ def load_model_loading_plan(
         source = ensure_no_symlink(root, safe_relative_path(identity.path))
         if not source.is_file() or sha256_file(source) != identity.sha256:
             raise EvidenceError("implementation_identity_mismatch", identity.path)
+    _verify_runtime_build_contract(
+        ensure_no_symlink(root, safe_relative_path(plan.runtime.runtime_build_path)),
+        plan,
+    )
     return plan, digest
+
+
+def _verify_runtime_build_contract(path: Path, plan: ModelLoadingPlan) -> None:
+    data = strict_fields(
+        require_object(load_json(path), "runtime build"),
+        {
+            "architecture",
+            "base_image_digest",
+            "base_python_sha256",
+            "image_digest",
+            "operating_system",
+            "pypi_index_url",
+            "python_version",
+            "pytorch_tag",
+            "pytorch_tag_commit",
+            "pytorch_wheel_index_url",
+            "pytorch_wheel_source_commit",
+            "requirements_path",
+            "requirements_sha256",
+            "schema_version",
+            "wheels",
+        },
+        "runtime build",
+    )
+    if (
+        data["schema_version"] != "voxelscope/model-loading-runtime-build/v1"
+        or data["operating_system"] != plan.runtime.operating_system
+        or data["architecture"] != plan.runtime.architecture
+        or data["python_version"] != plan.runtime.python_version
+        or data["pytorch_tag"] != plan.runtime.pytorch_tag
+        or data["pytorch_tag_commit"] != plan.runtime.pytorch_tag_commit
+        or data["pytorch_wheel_source_commit"] != plan.runtime.pytorch_wheel_source_commit
+        or data["requirements_path"] != plan.runtime.requirements_path
+        or data["requirements_sha256"] != plan.runtime.requirements_sha256
+    ):
+        raise EvidenceError("runtime_build_contract_mismatch", "runtime fields differ")
+    names: set[str] = set()
+    for raw in require_list(data["wheels"], "wheels"):
+        wheel = strict_fields(
+            require_object(raw, "runtime wheel"),
+            {
+                "filename",
+                "index_url",
+                "name",
+                "sha256",
+                "size_bytes",
+                "version",
+            },
+            "runtime wheel",
+        )
+        name = require_string(wheel["name"], "name")
+        if name in names or require_int(wheel["size_bytes"], "size_bytes") <= 0:
+            raise EvidenceError("runtime_wheel_contract_mismatch", name)
+        require_sha256(require_string(wheel["sha256"], "sha256"))
+        names.add(name)
+    if names != {"torch", "numpy", "scipy", "nibabel", "monai"}:
+        raise EvidenceError("runtime_wheel_contract_mismatch", "wheel set differs")
 
 
 def _load_acquisition_artifact(repository_root: Path) -> AcquisitionArtifact:

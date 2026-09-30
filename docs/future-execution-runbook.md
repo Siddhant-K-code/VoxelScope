@@ -108,7 +108,7 @@ Private execution remains unauthorized. A later operator action must supply the 
 
 ## Private model-loading qualification gate
 
-Milestone 8 implements, but does not privately execute, the model archive extraction and loading gate. Its public plan is [`research/model-loading-plan-v1.json`](../research/model-loading-plan-v1.json). Its synthetic-only public evidence is [`research/milestone-8`](../research/milestone-8).
+Milestone 8 implements, but does not privately execute, the model archive extraction and loading gate. Runtime preflight superseded v1 because the official CPU wheel reports its actual source commit rather than the later release tag commit. The corrected public plan is [`research/model-loading-plan-v2.json`](../research/model-loading-plan-v2.json), its reviewed build contract is [`research/model-loading-runtime-build-v1.json`](../research/model-loading-runtime-build-v1.json), and its synthetic-only public evidence is [`research/milestone-8-v2`](../research/milestone-8-v2). The v1 plan and bundle remain immutable historical refusal evidence.
 
 The executor requires one new owner-private authorization bound to the final plan digest, existing private custody receipt digest, public official archive digest, exact isolated Python executable digest, and a separately reviewed closed PyTorch/MONAI runtime-distribution fingerprint. The private root, receipt identity, runtime path, and runtime fingerprint enter through a bounded inherited descriptor, never through command-line arguments or environment variables. The subprocess uses a fixed nonsensitive process argument name while selecting the approved executable separately. The executor writes a durable attempt marker before reading the approved receipt or archive and consumes the authorization on any terminal outcome.
 
@@ -125,7 +125,7 @@ Before a future private run:
 3. Confirm the environment is offline and compute the exact Python executable SHA-256.
 4. Review the existing private model custody receipt and official archive identity without copying either path or receipt identity into public artifacts.
 5. Supply the private root, receipt digest, archive digest, plan digest, runtime executable path, and executable digest in one owner-only regular file or pipe attached as the authorization descriptor.
-6. Run `python -m voxelscope.milestone8_cli private-execute --plan research/model-loading-plan-v1.json --authorization-fd <FD>` exactly once.
+6. Run `python -m voxelscope.milestone8_cli private-execute --plan research/model-loading-plan-v2.json --authorization-fd <FD>` exactly once.
 7. Treat either a private completion or refusal as terminal. Do not retry under the same authorization.
 8. Keep the extraction manifest, loading report, state observations, and all resulting identities private.
 

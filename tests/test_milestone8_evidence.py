@@ -24,8 +24,9 @@ from voxelscope.model_loading_contract import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-PLAN = ROOT / "research/model-loading-plan-v1.json"
-BUNDLE = ROOT / "research/milestone-8"
+PLAN = ROOT / "research/model-loading-plan-v2.json"
+BUNDLE = ROOT / "research/milestone-8-v2"
+SUPERSEDED_BUNDLE = ROOT / "research/milestone-8"
 
 
 def _copy_bundle(tmp_path: Path) -> Path:
@@ -51,7 +52,7 @@ def _reindex(root: Path) -> None:
                 for relative in sorted(INDEXED_PATHS)
             ],
             "bundle_format": "voxelscope-closed-public-bundle-v1",
-            "schema_version": "voxelscope/milestone-8-public-evidence/v1",
+            "schema_version": "voxelscope/milestone-8-public-evidence/v2",
         },
     )
     digest = sha256_file(root / "bundle.json")
@@ -84,7 +85,7 @@ def test_bundle_refuses_overwrite(tmp_path: Path) -> None:
 
 def test_bundle_refuses_private_field_even_when_rehashed(tmp_path: Path) -> None:
     candidate = _copy_bundle(tmp_path)
-    summary_path = candidate / "public-summary-v1.json"
+    summary_path = candidate / "public-summary-v2.json"
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     summary["state_dict_keys"] = ["private"]
     write_json(summary_path, summary)
@@ -98,7 +99,7 @@ def test_bundle_refuses_private_field_even_when_rehashed(tmp_path: Path) -> None
 
 def test_bundle_refuses_claim_expansion_even_when_rehashed(tmp_path: Path) -> None:
     candidate = _copy_bundle(tmp_path)
-    summary_path = candidate / "public-summary-v1.json"
+    summary_path = candidate / "public-summary-v2.json"
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     summary["model_loaded"] = True
     write_json(summary_path, summary)
@@ -160,7 +161,7 @@ def test_public_bundle_contains_explicit_non_actions_only() -> None:
         b'"loading_report_sha256":',
     ):
         assert forbidden not in joined
-    summary = json.loads((BUNDLE / "public-summary-v1.json").read_text(encoding="utf-8"))
+    summary = json.loads((BUNDLE / "public-summary-v2.json").read_text(encoding="utf-8"))
     assert summary["extraction_executed"] is False
     assert summary["model_deserialized"] is False
     assert summary["model_instantiated"] is False
@@ -226,6 +227,9 @@ def test_cli_verifies_milestone8_bundle(capsys: pytest.CaptureFixture[str]) -> N
 
 
 def test_historical_bundle_identities_are_preserved() -> None:
+    assert sha256_file(SUPERSEDED_BUNDLE / "bundle.json") == (
+        "5b4e11c50330c13a8d5110731b390e59f12d46ae2bbb9fb4dfeacef7a281b9fd"
+    )
     assert sha256_file(ROOT / "research/milestone-6/bundle.json") == (
         MILESTONE6_PUBLIC_BUNDLE_SHA256
     )

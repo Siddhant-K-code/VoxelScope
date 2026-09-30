@@ -10,6 +10,7 @@ import hashlib
 import importlib
 import importlib.metadata
 import os
+import platform
 import stat
 import sys
 from collections import OrderedDict
@@ -393,9 +394,10 @@ def _runtime_is_exact(torch: Any, monai: Any, request: WorkerRequest) -> bool:
     torch_commit = str(getattr(torch.version, "git_version", ""))
     return (
         sys.platform.startswith("linux")
-        and sys.version_info[:2] == (3, 12)
+        and platform.machine().lower() in {"aarch64", "arm64"}
+        and platform.python_version() == request.runtime.python_version
         and torch_version == request.runtime.torch_version
-        and torch_commit == request.runtime.torch_commit
+        and torch_commit == request.runtime.pytorch_wheel_source_commit
         and str(monai.__version__) == request.runtime.monai_version
         and hashlib.sha256(
             canonical_json_bytes(

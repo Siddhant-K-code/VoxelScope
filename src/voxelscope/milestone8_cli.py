@@ -151,7 +151,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.command == "synthetic-qualify":
             result = qualify_synthetic_model_loading(
-                repository_root / "research/model-loading-plan-v1.json",
+                repository_root / "research/model-loading-plan-v2.json",
                 repository_root=repository_root,
             )
             print(

@@ -38,20 +38,21 @@ from .model_loading_contract import (
     MODEL_LICENSE_SHA256,
     MODEL_ZOO_COMMIT,
     MONAI_COMMIT,
-    PYTORCH_COMMIT,
+    PYTORCH_TAG_COMMIT,
+    PYTORCH_WHEEL_SOURCE_COMMIT,
     SOURCE_REGISTRY_SHA256,
     TRUSTED_PUBLIC_BUNDLE_SHA256,
 )
 from .model_loading_records import ExtractionMember, LoaderWorkerRequest
 from .records import require_list, require_object, require_string, strict_fields
 
-PUBLIC_EVIDENCE_SCHEMA = "voxelscope/milestone-8-public-evidence/v1"
+PUBLIC_EVIDENCE_SCHEMA = "voxelscope/milestone-8-public-evidence/v2"
 PUBLIC_BUNDLE_FORMAT = "voxelscope-closed-public-bundle-v1"
 PAYLOAD_PATHS = (
     "README.txt",
     "claim-matrix.json",
     "privacy-report.json",
-    "public-summary-v1.json",
+    "public-summary-v2.json",
     "source-manifest.json",
     "synthetic-qualification.json",
 )
@@ -214,6 +215,9 @@ def _summary() -> dict[str, Any]:
         "schema_version": PUBLIC_EVIDENCE_SCHEMA,
         "spend_authorized": False,
         "synthetic_qualification_status": "go",
+        "supersedes_plan_sha256": (
+            "48902842a3de6db5efc72f5c499550a92a656459125c18cac785da7407a0d91c"
+        ),
     }
 
 
@@ -283,7 +287,10 @@ def _source_manifest(plan_path: Path, repository_root: Path) -> dict[str, Any]:
         "model_zoo_commit": MODEL_ZOO_COMMIT,
         "monai_commit": MONAI_COMMIT,
         "plan_sha256": plan_sha256,
-        "pytorch_commit": PYTORCH_COMMIT,
+        "pytorch_tag_commit": PYTORCH_TAG_COMMIT,
+        "pytorch_wheel_source_commit": PYTORCH_WHEEL_SOURCE_COMMIT,
+        "runtime_build_path": plan.runtime.runtime_build_path,
+        "runtime_build_sha256": plan.runtime.runtime_build_sha256,
         "schema_version": PUBLIC_EVIDENCE_SCHEMA,
         "source_registry_sha256": SOURCE_REGISTRY_SHA256,
     }
@@ -310,7 +317,7 @@ def build_milestone8_public_bundle(
         records = {
             "claim-matrix.json": _claim_matrix(),
             "privacy-report.json": _privacy_report(),
-            "public-summary-v1.json": _summary(),
+            "public-summary-v2.json": _summary(),
             "source-manifest.json": _source_manifest(plan_path, repository_root),
             "synthetic-qualification.json": qualify_synthetic_model_loading(
                 plan_path, repository_root=repository_root
@@ -456,9 +463,9 @@ def verify_milestone8_public_bundle(
         raise EvidenceError("public_claim_matrix_mismatch", "claim matrix differs")
     if records["privacy-report.json"] != _privacy_report():
         raise EvidenceError("public_privacy_report_mismatch", "privacy report differs")
-    if records["public-summary-v1.json"] != _summary():
+    if records["public-summary-v2.json"] != _summary():
         raise EvidenceError("public_summary_mismatch", "summary differs")
-    plan_path = repository_root / "research/model-loading-plan-v1.json"
+    plan_path = repository_root / "research/model-loading-plan-v2.json"
     if records["source-manifest.json"] != _source_manifest(plan_path, repository_root):
         raise EvidenceError("source_manifest_mismatch", "source identities differ")
     if records["synthetic-qualification.json"] != qualify_synthetic_model_loading(
