@@ -14,7 +14,9 @@ Milestone 4 acquired the eight objects in the approved OpenNeuro `ds007045` v2.0
 
 Milestone 6 now proves the public positional bridge from preprocessing `(C,I,J,K)` to model input `(N,C,D,H,W)`: `I -> D`, `J -> H`, and `K -> W`, with no transpose, reorientation, resampling, affine relabeling, or anatomical-direction claim. The pinned ROI is `(240,240,160)`, overlap is one half, traversal is lexicographic `I,J,K` with `K` changing fastest, and final anchors and coverage agree with an independent oracle across asymmetric synthetic cases. MONAI's symmetric padding and crop behavior are pinned separately from VoxelScope's legacy high-side-only padding.
 
-The project is still **NO-GO** for real-data inference. The legacy engine's unpadded positional enumeration is GO, but its general padded extraction is not equivalent to MONAI and must not be reused for real inference. Source-label versus model-output semantics, model-training overlap, runtime image, host and budget authorization, and the explicit inference start gate also remain unresolved. The official MONAI `brats_mri_segmentation` 0.5.2 archive remains verified without extraction or model loading. The project has not loaded a model, run inference, used a GPU, provisioned cloud resources, authorized spend, or measured diagnostic accuracy.
+Milestone 7 adds an implementation-only private window-execution adapter. It places a one-shot marker before any approved private preprocessing read, binds the exact private Milestone 5 report and snapshot identities only inside private authorization and terminal evidence, stages the reference tensor immutably, and compares every window byte-for-byte through two independent paths: full symmetric padding followed by slicing, and direct source intersection with local zero padding. It streams windows into a bounded private ledger rather than persisting them. The committed public evidence contains only synthetic fixture statuses and counts. This milestone did not inspect or execute against private data.
+
+The project is still **NO-GO** for real-data inference. Running the Milestone 7 adapter against the approved private Milestone 5 snapshot requires a separate explicit authorization. The legacy engine's unpadded positional enumeration is GO, but its general padded extraction is not equivalent to MONAI and must not be reused for real inference. Source-label versus model-output semantics, model-training overlap, runtime image, host and budget authorization, and the explicit inference start gate also remain unresolved. The official MONAI `brats_mri_segmentation` 0.5.2 archive remains verified without extraction or model loading. The project has not loaded a model, run inference, used a GPU, provisioned cloud resources, authorized spend, or measured diagnostic accuracy.
 
 The current package provides:
 
@@ -36,6 +38,10 @@ The current package provides:
 - A source-pinned positional bridge from neutral `I,J,K` axes to model `D,H,W` positions.
 - Independent final-anchor, traversal, coverage, symmetric-padding, crop, and legacy-bundle checks over asymmetric synthetic fixtures.
 - A closed milestone 6 public evidence bundle that records the legacy general padded path as NO-GO.
+- A one-shot private window adapter with immutable staging and a single completion-or-refusal terminal path.
+- Independent full-padding and direct-intersection materializers with exact streamed byte comparison.
+- A bounded private report/ledger design that persists no windows.
+- A closed milestone 7 public evidence bundle containing synthetic fixture statuses and counts only.
 
 ## Architecture
 
@@ -64,6 +70,11 @@ src/voxelscope/
   window_bridge.py  Independent window oracle and MONAI positional padding proof
   window_bridge_contract.py  Trusted milestone 6 plan and report identities
   milestone6_evidence.py  Sanitized positional bridge evidence
+  window_execution_records.py  Strict private adapter plan, report, ledger, completion, and refusal records
+  window_execution.py  One-shot dual-path private window materialization qualification
+  window_execution_contract.py  Trusted milestone 5, 6, 7, and legacy identities
+  milestone7_evidence.py  Synthetic-only closed public implementation evidence
+  milestone7_cli.py  Separate offline milestone 7 command-line interface
   custody.py      Private acquisition, archive verification, and public scans
   cli.py         Offline command-line interface
 ```
@@ -107,6 +118,10 @@ python -m voxelscope.milestone6_cli window-bridge \
   --plan research/window-bridge-plan-v1.json \
   --report research/window-bridge-report-v1.json
 python -m voxelscope.milestone6_cli public-verify --bundle research/milestone-6
+python -m voxelscope.milestone7_cli synthetic-qualify
+python -m voxelscope.milestone7_cli public-verify --bundle research/milestone-7
+python -m voxelscope.milestone7_cli private-execute --help
+python -m voxelscope.milestone7_cli private-verify --help
 voxelscope preprocess execute --help
 voxelscope preprocess verify --help
 voxelscope milestone5-public verify --help
