@@ -38,6 +38,7 @@ REQUIRED_OUTCOMES = {
     "mutation_to_protein",
     "mutation_to_phosphorylation",
     "chain_concordance",
+    "secondary_two_layer_discordance",
     "conflict_counts",
     "reproducibility",
 }
@@ -45,6 +46,7 @@ RESULT_SHAPES = {
     "concordant",
     "null",
     "discordant",
+    "secondary_two_layer_discordant",
     "mixed_or_indeterminate",
     "unavailable",
     "feasibility_refusal",
@@ -109,10 +111,14 @@ def test_source_qualification_registry_is_canonical_and_complete() -> None:
 def test_registry_keeps_access_classes_and_pr_context_explicit() -> None:
     registry = _canonical(REGISTRY)
     context = registry["implementation_context"]
-    for name in ("synthetic_implementation", "product_contract"):
-        assert context[name]["state"] == "open"
-        assert context[name]["merged"] is False
-        assert len(context[name]["commit"]) == 40
+    implementation = context["synthetic_implementation"]
+    assert implementation["state"] == "merged"
+    assert implementation["merged"] is True
+    assert implementation["commit"] == "88d074b9116d913ce720bd1a5e72a7e24933110f"
+    product = context["product_contract"]
+    assert product["state"] == "open"
+    assert product["merged"] is False
+    assert product["commit"] == "fe54575836f1653533c678e6b43afa55217a122b"
     by_id = {source["source_id"]: source for source in registry["sources"]}
     assert by_id["tcia-cptac-gbm-v16"]["access"]["classification"] == "mixed"
     assert by_id["gdc-cptac-3-dr46"]["access"]["classification"] == "mixed"
@@ -202,6 +208,7 @@ def test_study_freezes_outcomes_multiplicity_shapes_and_gates() -> None:
         "missingness",
         "identifier-integrity",
         "multiplicity",
+        "primary-binomial-population",
         "reproducibility",
         "reporting-completeness",
         "privacy-and-copy",
@@ -209,11 +216,58 @@ def test_study_freezes_outcomes_multiplicity_shapes_and_gates() -> None:
     assert study["study_level_blockers"]
 
 
-def test_public_qualification_prose_is_ascii_and_tracks_unmerged_dependencies() -> None:
+def test_primary_binomial_population_and_states_are_consistent() -> None:
+    study = _canonical(STUDY)
+    analysis = study["analysis"]
+    primary_rule = analysis["primary_binomial_rule"]
+    population = "Frozen candidates with BH q <= 0.05 for RNA, protein, and selected phosphosite"
+    assert primary_rule["population"] == population
+    assert primary_rule["success"].startswith("concordant, defined as three significant layers")
+    assert primary_rule["failure"].startswith("discordant, defined as three significant layers")
+    assert "secondary_two_layer_discordant" in primary_rule["excluded_states"]
+
+    primary_hypothesis = next(
+        item
+        for item in study["hypotheses"]
+        if item["hypothesis_id"] == "primary-directional-concordance"
+    )
+    assert primary_hypothesis["population"] == population
+    assert primary_hypothesis["success"] == primary_rule["success"]
+    assert primary_hypothesis["failure"] == primary_rule["failure"]
+
+    outcomes = {item["name"]: item for item in study["outcomes"]}
+    assert outcomes["chain_concordance"]["denominator"] == population
+    assert "exactly two" in outcomes["secondary_two_layer_discordance"]["denominator"]
+    assert "no inclusion in the primary" in outcomes["secondary_two_layer_discordance"]["statistic"]
+
+    states = analysis["candidate_state_rule"]
+    assert states["discordant"].startswith(
+        "RNA, protein, and selected phosphosite all have BH q <= 0.05"
+    )
+    assert states["secondary_two_layer_discordant"].startswith(
+        "Exactly two layers have BH q <= 0.05"
+    )
+    shapes = {item["label"]: item["meaning"] for item in study["result_shapes"]}
+    assert "primary exact-binomial success" in shapes["concordant"]
+    assert "primary exact-binomial failure" in shapes["discordant"]
+    assert (
+        "excluded from the primary exact-binomial population"
+        in shapes["secondary_two_layer_discordant"]
+    )
+
+    population_gate = next(
+        item for item in study["gates"] if item["gate_id"] == "primary-binomial-population"
+    )
+    assert population_gate["measure"] == population
+    assert "no p-value" in population_gate["failure_action"]
+
+
+def test_public_qualification_prose_is_ascii_and_tracks_dependency_states() -> None:
     paths = (REGISTRY, JOIN_MAP, STUDY, PROTOCOL)
     for path in paths:
         text = path.read_text(encoding="utf-8")
         assert "\N{EM DASH}" not in text
     protocol = PROTOCOL.read_text(encoding="utf-8")
     assert "Research evidence only. Not for diagnosis or treatment decisions." in protocol
+    assert "merged at commit `88d074b9116d913ce720bd1a5e72a7e24933110f`" in protocol
     assert "open and unmerged" in protocol

@@ -8,12 +8,12 @@ Research evidence only. Not for diagnosis or treatment decisions.
 
 This record does not support claims about prognosis, druggability, treatment suitability, causal mechanisms, therapeutic targets, or patient-specific validity. A reported association or agreement would apply only to the declared source release, cohort, assay, and comparison rule.
 
-Two open and unmerged pull requests define adjacent work:
+Two pull requests define adjacent work:
 
-- [Draft PR #12](https://github.com/Siddhant-K-code/VoxelScope/pull/12) at commit `26944afc04fba40d1661728441087f0d6fbae950` owns the synthetic implementation, strict source manifest, identifier normalization, protein-card compiler, conflict and missing states, and canonical receipts.
+- [PR #12](https://github.com/Siddhant-K-code/VoxelScope/pull/12) merged at commit `88d074b9116d913ce720bd1a5e72a7e24933110f` and owns the synthetic implementation, strict source manifest, identifier normalization, protein-card compiler, conflict and missing states, and canonical receipts.
 - [Draft PR #13](https://github.com/Siddhant-K-code/VoxelScope/pull/13) at commit `fe54575836f1653533c678e6b43afa55217a122b` owns the product contract in `docs/glioblastoma-evidence-atlas-v0.md`.
 
-Both PRs are open and unmerged. This branch remains based on `main`. It adds no competing runtime schema or implementation. After either PR merges, a separate migration must map these qualified release records into the merged schema and preserve its meanings.
+PR #13 remains open and unmerged. This branch remains on its independent base and adds no competing runtime schema or implementation. Final rebase and status cleanup wait for PR #13 to merge. That rebase must map these qualified release records into the merged product contract without changing the merged implementation schema or meanings.
 
 The machine-readable records are:
 
@@ -127,7 +127,9 @@ For each candidate, the primary phosphosite is chosen without outcome inspection
 
 ### Hypotheses
 
-The primary null is that, among candidates with at least two significant molecular layers, the probability of concordant direction is at most 0.5. The alternative is that concordant directions are more frequent. The aggregate test is a one-sided exact binomial test with `p0 = 0.5` after candidate-layer correction.
+The primary exact-binomial population contains only candidates for which RNA, protein, and the selected phosphosite all have `q <= 0.05`. A success is a candidate for which all three Cliff's delta signs match. A failure is a candidate for which the three signs are not all the same. The primary null is that the success probability is at most 0.5. The alternative is that it is greater than 0.5. The aggregate test is a one-sided exact binomial test with `p0 = 0.5` after candidate-layer correction.
+
+Candidates with exactly two significant layers and opposing signs have the secondary state `secondary_two_layer_discordant`. Candidates with exactly two same-sign significant layers are `mixed_or_indeterminate`. Neither state enters the primary exact-binomial population. If no candidate has three significant layers, the primary aggregate test is unavailable and has no p-value. Candidate-layer and secondary results are still reported.
 
 The candidate-layer null is equal altered and unaltered abundance distributions for each frozen candidate and layer. The alternative is a difference in at least one layer. A significant test does not establish causation.
 
@@ -137,11 +139,12 @@ These are prospective shapes, not observed findings:
 
 | Shape | Rule |
 |---|---|
-| `concordant_up` | RNA, protein, and selected phosphosite all have `q <= 0.05` and positive Cliff's delta. |
-| `concordant_down` | RNA, protein, and selected phosphosite all have `q <= 0.05` and negative Cliff's delta. |
-| `discordant` | At least two layers have `q <= 0.05` and opposing effect signs. This is a negative result for directional concordance. |
+| `concordant_up` | RNA, protein, and selected phosphosite all have `q <= 0.05` and positive Cliff's delta. This is a primary success. |
+| `concordant_down` | RNA, protein, and selected phosphosite all have `q <= 0.05` and negative Cliff's delta. This is a primary success. |
+| `discordant` | All three layers have `q <= 0.05`, and their three effect signs are not all the same. This is a primary failure. |
+| `secondary_two_layer_discordant` | Exactly two layers have `q <= 0.05` and their effect signs oppose. This state is excluded from the primary population. |
 | `null` | No layer has `q <= 0.05`. Null results remain visible. |
-| `mixed_or_indeterminate` | The candidate is analyzable but does not meet another state. |
+| `mixed_or_indeterminate` | The candidate is analyzable but has one significant layer, two same-sign significant layers, or another pattern outside the declared primary, secondary, and null states. |
 | `unavailable` | A source, access, join, identity, sequence, group-size, or missingness gate prevents analysis. |
 | `feasibility_refusal` | A study-level stop gate fails. Only gate metrics and blockers may be released. |
 
@@ -155,7 +158,9 @@ Every released report must include:
 - Zero-match, one-match, and multiple-match counts at patient, sample, gene, protein, phosphosite, and cohort levels.
 - Patient join coverage and exact sample join coverage with explicit denominators.
 - Cliff's delta, raw p-value, BH q-value, direction, and state for mutation to RNA, mutation to protein, and mutation to the selected phosphosite.
-- Concordant, discordant, null, mixed, unavailable, and feasibility-refusal counts.
+- The primary population count, concordant success count, discordant failure count, concordant fraction, exact-binomial p-value, and empty-population availability state.
+- Secondary two-layer opposing-sign and same-sign counts and the opposing-sign fraction, without adding them to the primary population.
+- Null, mixed, unavailable, and feasibility-refusal counts.
 - Identity, one-to-many join, scope, unit, sequence, and directional conflict counts.
 - Canonical output and receipt SHA-256 values, repeat equality, and independent integer-metric agreement.
 - All 19 candidate rows, including every null, negative, excluded, or unavailable case.
@@ -172,8 +177,9 @@ Every released report must include:
 | Missingness | Mutation status has zero missing values; RNA, protein, and selected phosphosite each have at most 30 percent missing among exact joined samples | Mark affected layers unavailable and apply the complete-case stop |
 | Identifier integrity | Zero unresolved identity conflicts, zero guessed aliases, and 100 percent selected-site sequence validation | Stop before analysis |
 | Multiple testing | One declared BH family and `q <= 0.05` for significance labels | Do not publish inferential labels |
+| Primary binomial population | At least one candidate has significant RNA, protein, and selected phosphosite results | If zero, report the primary aggregate test as unavailable with no p-value and continue reporting candidate-layer and secondary results |
 | Reproducibility | Two clean offline builds are byte-identical; an independent verifier agrees exactly on denominators, joins, missingness, and conflicts | Stop release |
-| Reporting | All 19 candidates and every preregistered metric and state are present | Stop release |
+| Reporting | All 19 candidates have exactly one state; primary population, success, and failure counts and secondary two-layer counts are present with every preregistered metric | Stop release |
 | Privacy and copy | Zero controlled files, patient records, credentials, private paths, diagnostic or treatment claims, target labels, or causal claims | Stop release |
 
 No passing gate overrides a failed gate.
@@ -185,7 +191,7 @@ The first study is currently blocked by:
 - Unverified PDC file-byte access and current formal data-use terms.
 - Missing version-specific UUIDs for PDC000205, PDC000446, PDC000448, PDC000514, and PDC000515.
 - No release-pinned PDC to GDC patient and sample crosswalk approved for execution.
-- No real-data adapter, source receipt, or migration into the eventual merged form of PR #12 and PR #13.
+- No real-data adapter, source receipt, or migration from merged PR #12 into the eventual merged product contract from PR #13.
 - No pinned HGNC, Ensembl, UniProt, or phosphosite sequence reference bundle.
 - DepMap bot-check behavior and per-file terms.
 - GLASS Synapse access requirements and exact terms.
