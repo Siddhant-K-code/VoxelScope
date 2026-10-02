@@ -8,12 +8,12 @@ Research evidence only. Not for diagnosis or treatment decisions.
 
 This record does not support claims about prognosis, druggability, treatment suitability, causal mechanisms, therapeutic targets, or patient-specific validity. A reported association or agreement would apply only to the declared source release, cohort, assay, and comparison rule.
 
-Two pull requests define adjacent work:
+Two merged pull requests define the implementation baseline:
 
 - [PR #12](https://github.com/Siddhant-K-code/VoxelScope/pull/12) merged at commit `88d074b9116d913ce720bd1a5e72a7e24933110f` and owns the synthetic implementation, strict source manifest, identifier normalization, protein-card compiler, conflict and missing states, and canonical receipts.
-- [Draft PR #13](https://github.com/Siddhant-K-code/VoxelScope/pull/13) at commit `fe54575836f1653533c678e6b43afa55217a122b` owns the product contract in `docs/glioblastoma-evidence-atlas-v0.md`.
+- [PR #13](https://github.com/Siddhant-K-code/VoxelScope/pull/13) merged at commit `4bd9d60b895981112af267f813e1a31c1aacf4fe` and owns the product contract in `docs/glioblastoma-evidence-atlas-v0.md`.
 
-PR #13 remains open and unmerged. This branch remains on its independent base and adds no competing runtime schema or implementation. Final rebase and status cleanup wait for PR #13 to merge. That rebase must map these qualified release records into the merged product contract without changing the merged implementation schema or meanings.
+This branch is rebased on both merged baselines and adds no competing runtime schema or implementation. A future real-data adapter must map qualified release records into the merged implementation under the merged product contract without changing their schemas or meanings.
 
 The machine-readable records are:
 
@@ -191,7 +191,7 @@ The first study is currently blocked by:
 - Unverified PDC file-byte access and current formal data-use terms.
 - Missing version-specific UUIDs for PDC000205, PDC000446, PDC000448, PDC000514, and PDC000515.
 - No release-pinned PDC to GDC patient and sample crosswalk approved for execution.
-- No real-data adapter, source receipt, or migration from merged PR #12 into the eventual merged product contract from PR #13.
+- No real-data adapter or source receipt maps qualified releases into the merged PR #12 implementation under the merged PR #13 product contract.
 - No pinned HGNC, Ensembl, UniProt, or phosphosite sequence reference bundle.
 - DepMap bot-check behavior and per-file terms.
 - GLASS Synapse access requirements and exact terms.

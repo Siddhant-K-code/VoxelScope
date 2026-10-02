@@ -116,9 +116,15 @@ def test_registry_keeps_access_classes_and_pr_context_explicit() -> None:
     assert implementation["merged"] is True
     assert implementation["commit"] == "88d074b9116d913ce720bd1a5e72a7e24933110f"
     product = context["product_contract"]
-    assert product["state"] == "open"
-    assert product["merged"] is False
-    assert product["commit"] == "fe54575836f1653533c678e6b43afa55217a122b"
+    assert product["state"] == "merged"
+    assert product["merged"] is True
+    assert product["commit"] == "4bd9d60b895981112af267f813e1a31c1aacf4fe"
+    study_context = _canonical(STUDY)["implementation_context"]
+    assert (
+        study_context["synthetic_implementation_commit"]
+        == "88d074b9116d913ce720bd1a5e72a7e24933110f"
+    )
+    assert study_context["product_contract_commit"] == "4bd9d60b895981112af267f813e1a31c1aacf4fe"
     by_id = {source["source_id"]: source for source in registry["sources"]}
     assert by_id["tcia-cptac-gbm-v16"]["access"]["classification"] == "mixed"
     assert by_id["gdc-cptac-3-dr46"]["access"]["classification"] == "mixed"
@@ -270,4 +276,6 @@ def test_public_qualification_prose_is_ascii_and_tracks_dependency_states() -> N
     protocol = PROTOCOL.read_text(encoding="utf-8")
     assert "Research evidence only. Not for diagnosis or treatment decisions." in protocol
     assert "merged at commit `88d074b9116d913ce720bd1a5e72a7e24933110f`" in protocol
-    assert "open and unmerged" in protocol
+    assert "merged at commit `4bd9d60b895981112af267f813e1a31c1aacf4fe`" in protocol
+    assert "open and unmerged" not in protocol
+    assert "wait for PR #13" not in protocol
