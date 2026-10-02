@@ -2,9 +2,9 @@
 
 ## Status
 
-The Glioblastoma Evidence Atlas is a proposed research capability for VoxelScope. This specification defines its product boundary, evidence domain, identifier rules, reproducible workflow, release gates, and phased expansion.
+The Glioblastoma Evidence Atlas includes a synthetic research capability in VoxelScope. This specification defines its current product boundary, evidence domain, identifier rules, reproducible workflow, release gates, and phased expansion.
 
-Draft pull request [#12](https://github.com/Siddhant-K-code/VoxelScope/pull/12) provides the first executable synthetic slice at commit `26944afc04fba40d1661728441087f0d6fbae950`. That pull request is open and unmerged. This design branch remains independent from it and does not copy its schemas or implementation.
+Pull request [#12](https://github.com/Siddhant-K-code/VoxelScope/pull/12) added the first executable synthetic slice and was squash-merged at commit `88d074b9116d913ce720bd1a5e72a7e24933110f`. The merged schemas and implementation are the baseline for this contract.
 
 The product question is:
 
@@ -47,9 +47,9 @@ Version 0 does not:
 - Implement production source ingestion, authentication, an API, or a polished interface.
 - Commit controlled data, raw patient data, credentials, private paths, or private receipts.
 
-## Draft v0 implementation context
+## Synthetic v0 implementation context
 
-Pull request #12 establishes the current executable boundary. Its concrete surfaces are:
+Pull request #12 established the current executable boundary. Its concrete surfaces are:
 
 - `src/voxelscope/gbm_atlas.py`
 - `src/voxelscope/gbm_atlas_cli.py`
@@ -70,9 +70,9 @@ It writes canonical `atlas.json` and `receipt.json` files into a new output dire
 
 This separate module is intentional. `src/voxelscope/cli.py` is hash-pinned by the Milestone 5 preprocessing plan and must not be changed to expose the atlas.
 
-### Draft v0 schemas
+### Synthetic v0 schemas
 
-The draft owns these executable schemas:
+The merged implementation owns these executable schemas:
 
 | Schema | Purpose |
 |---|---|
@@ -84,7 +84,7 @@ The draft owns these executable schemas:
 
 The transformation identity is `voxelscope/gbm-evidence-transform/v1`.
 
-The draft modality vocabulary is exact:
+The synthetic v0 modality vocabulary is exact:
 
 - `mutation`
 - `rna_abundance`
@@ -96,9 +96,9 @@ The draft modality vocabulary is exact:
 - `target_evidence`
 - `alphafold_structure`
 
-The draft is synthetic only. It does not contain imaging, subject, sample, or other individual-level records. It does not rank proteins.
+Synthetic v0 is synthetic only. It does not contain imaging, subject, sample, or other individual-level records. It does not rank proteins.
 
-### Draft v0 card semantics
+### Synthetic v0 card semantics
 
 Each card has one canonical Ensembl gene ID and one canonical UniProt protein ID. It contains ordered evidence, present modalities, missing modalities, and a directional assessment.
 
@@ -141,7 +141,7 @@ flowchart LR
 
     RELEASES[Release-pinned source records]
     IDS[Canonical identifiers<br/>HGNC, Ensembl, Entrez, UniProt<br/>PDC, GDC, and TCIA IDs]
-    V0[Draft v0 protein card compiler]
+    V0[Synthetic v0 protein card compiler]
     GRAPH[Future deterministic evidence graph]
     RECEIPTS[Canonical receipts]
     CARDS[Protein cards]
@@ -170,13 +170,13 @@ flowchart LR
     RECEIPTS --> DISAGREE
 ```
 
-Draft v0 compiles local synthetic source records directly into protein cards. Production adapters will first create immutable release records. Identifier resolution will run before graph construction. Queries will read an immutable graph snapshot and will not call source systems.
+Synthetic v0 compiles local synthetic source records directly into protein cards. Production adapters will first create immutable release records. Identifier resolution will run before graph construction. Queries will read an immutable graph snapshot and will not call source systems.
 
 MRI is optional. Disabling TCIA must leave protein cards and non-imaging cohort views complete.
 
 ## Evidence domain contract
 
-The draft v0 card and receipt schemas remain authoritative for their current surfaces. Broader entities, subject or sample graphs, MRI, API, and UI require a new versioned schema. They must not mutate the draft v1 meanings.
+The synthetic v0 card and receipt schemas remain authoritative for their current surfaces. Broader entities, subject or sample graphs, MRI, API, and UI require a new versioned schema. They must not mutate the merged v1 meanings.
 
 The following is the normative domain contract for that phased extension.
 
@@ -242,9 +242,9 @@ Allowed normalized directions are `increased`, `decreased`, `present`, `absent`,
 
 Every future graph node and edge has a unique stable local ID. Nodes and edges are canonically sorted. Dangling edges, self-edges, duplicate canonical identities, unknown fields, nonfinite values, and invalid endpoints are refused.
 
-### Compatibility with draft v0
+### Compatibility with synthetic v0
 
-| Draft v0 surface | Future domain mapping |
+| Synthetic v0 surface | Future domain mapping |
 |---|---|
 | Source manifest entry | Source release plus receipt input |
 | Identifier mapping | Gene and protein identities plus mapping provenance |
@@ -255,13 +255,13 @@ Every future graph node and edge has a unique stable local ID. Nodes and edges a
 | Source freshness | Source release status |
 | Receipt | Receipt entity with covered inputs and output snapshot |
 
-The future graph may project back to `voxelscope/gbm-protein-evidence-atlas/v1` only when it can preserve every draft field and meaning. Otherwise it introduces a new schema version and migration note.
+The future graph may project back to `voxelscope/gbm-protein-evidence-atlas/v1` only when it can preserve every synthetic v0 field and meaning. Otherwise it introduces a new schema version and migration note.
 
 ## Identifier and join rules
 
-### Draft v0 exact behavior
+### Synthetic v0 exact behavior
 
-Draft v0 indexes every identifier mapping by the exact pair `(namespace, value)`.
+Synthetic v0 indexes every identifier mapping by the exact pair `(namespace, value)`.
 
 - Each mapping has one `canonical_gene_id` beginning with `ENSG`.
 - Each mapping has one nonempty `canonical_protein_id`.
@@ -272,7 +272,7 @@ Draft v0 indexes every identifier mapping by the exact pair `(namespace, value)`
 - One raw identifier resolving to more than one mapping stops the build with `ambiguous_identifier_mapping`.
 - No mapping produces an explicit `unsupported_identifier_join` exclusion.
 
-Draft v0 does not normalize versioned Ensembl IDs, HGNC IDs, Entrez IDs, phosphosite coordinates, or subject IDs. Production code must not treat that absence as permission to guess.
+Synthetic v0 does not normalize versioned Ensembl IDs, HGNC IDs, Entrez IDs, phosphosite coordinates, or subject IDs. Production code must not treat that absence as permission to guess.
 
 ### Production resolver rules
 
@@ -303,7 +303,7 @@ Zero matches produce an unavailable or unsupported record with a reason. More th
 
 ### 1. Source sync
 
-Draft v0 uses three checked-in canonical synthetic files and performs no network access. The manifest acts as the sync boundary: it pins source paths, source IDs, URIs, release dates, freshness windows, synthetic status, and SHA-256 digests.
+Synthetic v0 uses three checked-in canonical synthetic files and performs no network access. The manifest acts as the sync boundary: it pins source paths, source IDs, URIs, release dates, freshness windows, synthetic status, and SHA-256 digests.
 
 Production sync is a later command:
 
@@ -317,7 +317,7 @@ This proposed command requires explicit allowlisted network access, verifies lic
 
 ### 2. Graph or card build
 
-The available draft command is:
+The available synthetic v0 command is:
 
 ```bash
 uv run python -m voxelscope.gbm_atlas_cli build \
@@ -331,7 +331,7 @@ A future graph build may add `graph-build`, but it must preserve the existing `b
 
 ### 3. Evidence-card query
 
-Draft v0 exposes cards in `build/gbm-atlas/atlas.json`. It has no query command.
+Synthetic v0 exposes cards in `build/gbm-atlas/atlas.json`. It has no query command.
 
 The proposed read-only query is:
 
@@ -346,7 +346,7 @@ The result groups evidence by modality and context and includes missingness, uns
 
 ### 4. Receipt verification
 
-Draft v0 verifies the output digest during the build and writes `receipt.json`. It has no standalone verification command.
+Synthetic v0 verifies the output digest during the build and writes `receipt.json`. It has no standalone verification command.
 
 The proposed verifier is:
 
@@ -362,7 +362,7 @@ It recomputes the canonical atlas digest, verifies source digests and transforma
 
 Missing, restricted, unsupported, stale, and not measured are not negative evidence.
 
-Draft v0:
+Synthetic v0:
 
 - Lists every absent modality in `missing_modalities`.
 - Lists every unjoined evidence record in `unsupported_joins`.
@@ -384,9 +384,9 @@ The UI copy for absent MRI is:
 
 ## Conflict and evidence-strength semantics
 
-### Draft v0
+### Synthetic v0
 
-Draft v0 uses `directional_assessment.state`, not an evidence-strength score. Its `agreement`, `disagreement`, and `insufficient` states are defined above. Unsupported joins and missing modalities remain separate.
+Synthetic v0 uses `directional_assessment.state`, not an evidence-strength score. Its `agreement`, `disagreement`, and `insufficient` states are defined above. Unsupported joins and missing modalities remain separate.
 
 ### Production
 
@@ -465,7 +465,7 @@ A release is GO only when every applicable gate passes.
 | Receipt verification | Source digests, transformation identity, output digest, exclusions, and warnings verify |
 | MRI isolation | Protein cards work when TCIA and controlled MRI access are disabled |
 
-Draft v0 additionally requires:
+Synthetic v0 additionally requires:
 
 - `synthetic_only: true`
 - `ranking_performed: false`
@@ -481,9 +481,7 @@ Any failure is a NO-GO release. One passing source or view cannot override anoth
 
 ### Phase 0: synthetic protein-card compiler
 
-Review and, if approved, merge draft PR #12. Preserve its five schema identities, transformation identity, fixture digests, deterministic replay, no-clobber output, ambiguity refusal, exclusions, warnings, and separate CLI module.
-
-This phase is not merged at the time of this specification.
+PR #12 completed this phase at merge commit `88d074b9116d913ce720bd1a5e72a7e24933110f`. Preserve its five schema identities, transformation identity, fixture digests, deterministic replay, no-clobber output, ambiguity refusal, exclusions, warnings, and separate CLI module.
 
 ### Phase 1: smallest real molecular vertical slice
 
@@ -513,7 +511,7 @@ Add receipt verification and card query commands to `gbm_atlas_cli.py`, then exp
 
 The design reuses VoxelScope canonical JSON, strict field validation, SHA-256 identities, no-clobber publication, receipts, privacy scans, and research-only boundaries.
 
-The immediate executable dependency is open draft PR #12 at commit `26944afc04fba40d1661728441087f0d6fbae950`. This design does not assume it will merge unchanged. Any later implementation must rebase on the merged schema and migration decision.
+The executable baseline is PR #12 at merge commit `88d074b9116d913ce720bd1a5e72a7e24933110f`. Later implementation must preserve the merged schemas or make an explicit version and migration decision.
 
 The molecular vertical slice does not depend on Milestone 8 model loading or real MRI inference. It must not reuse the current private OpenNeuro subject, model archive, preprocessing output, or window evidence. Those assets were authorized for a different protocol.
 

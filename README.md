@@ -198,7 +198,7 @@ VoxelScope does not currently claim that:
 
 See [the corrected model-loading readiness record](docs/milestone-8-model-loading-readiness-v2.md), [the positional window bridge record](docs/milestone-6-window-bridge-readiness-v1.md), [the preprocessing adapter contract](docs/preprocessing-adapter-v1.md), [real-data readiness record](docs/real-data-readiness-v1.md), [active one-volume feasibility protocol](docs/one-volume-feasibility-protocol-v2.md), [historical protocol v1](docs/one-volume-feasibility-protocol-v1.md), and [private custody workflow](docs/private-custody-workflow-v1.md) before proposing real-data work.
 
-The proposed [Glioblastoma Evidence Atlas product contract](docs/glioblastoma-evidence-atlas-v0.md) is a separate research design aligned with the executable synthetic slice in open draft PR #12. Neither effort implements production source ingestion, authorizes current private assets for a new use, or changes an existing NO-GO gate.
+The [Glioblastoma Evidence Atlas product contract](docs/glioblastoma-evidence-atlas-v0.md) extends the executable synthetic slice merged in PR #12 at commit `88d074b9116d913ce720bd1a5e72a7e24933110f`. Neither the merged slice nor the future phases implement production source ingestion, authorize current private assets for a new use, or change an existing NO-GO gate.
 
 ## Next gate
 
