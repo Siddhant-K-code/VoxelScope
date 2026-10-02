@@ -40,15 +40,21 @@ timestamp as unavailable instead of substituting a retrieval date.
 
 The official GDC status endpoint reports Data Release 46.0, released 2026-08-10. The
 freeze pins project `CPTAC-3`, dbGaP accession `phs001287`, 1,866 project cases, and 211
-cases under the `Gliomas` disease filter. The file metadata query returned 498 open
-files needed by the preregistered workflows:
+cases under the `Gliomas` disease filter. The file metadata query returned a candidate
+superset of 498 open files for the eligible workflows:
 
 - 229 `STAR - Counts` gene expression files.
 - 269 `Aliquot Ensemble Somatic Variant Merging and Masking` files.
 
-For each file, the freeze records the GDC file ID, name, type, format, workflow, size,
-access tier, and source-supplied MD5. It requests no case, sample, aliquot, clinical, or
-biospecimen fields and downloads no file bytes.
+This inventory is not a selected analysis input and does not establish membership in the
+PDC000204 and PDC000205 Discovery cohort. Exact membership remains unresolved until the
+official target-study crosswalk and one-to-one patient and sample join checks pass. The
+211 GDC `CPTAC-3 + Gliomas` cases must not be compared with or treated as equivalent to
+the 111 PDC Discovery catalog cases.
+
+For each candidate inventory file, the freeze records the GDC file ID, name, type,
+format, workflow, size, access tier, and source-supplied MD5. It requests no case,
+sample, aliquot, clinical, or biospecimen fields and downloads no file bytes.
 
 ## Access decision
 
@@ -73,9 +79,11 @@ exact metadata record showing `Open` and `downloadable: Yes`, with any source-su
 hash pinned.
 
 Official GDC policy states that open data requires no login and controlled data requires
-dbGaP authorization and authentication. Every frozen GDC file record is marked `open`.
-The release manifest locators are pinned from the release notes, but their contents were
-not downloaded. Clinical and biospecimen rows were not acquired.
+dbGaP authorization and authentication. Every record in the candidate GDC metadata
+superset is marked `open`. This qualifies metadata openness only. It does not qualify
+Discovery cohort inclusion, authorize input selection, or authorize acquisition. The
+release manifest locators are pinned from the release notes, but their contents were not
+downloaded. Clinical and biospecimen rows were not acquired.
 
 ## Crosswalk decision
 
@@ -96,8 +104,8 @@ Resolved blockers:
 
 - All six version-specific PDC study UUIDs, stable IDs, names, fractions, counts, and
   version states are pinned.
-- GDC Data Release 46.0, project identity, open workflow file metadata, sizes, access
-  tiers, and source-supplied MD5 values are pinned.
+- GDC Data Release 46.0, project identity, and the candidate open workflow metadata
+  superset with sizes, access tiers, and source-supplied MD5 values are pinned.
 - The official PDC to GDC relationship capabilities are bounded by identifier level.
 
 Unresolved blockers:
@@ -107,6 +115,10 @@ Unresolved blockers:
 - Exact PDC report files, sizes, and source-supplied hashes are not yet selected and
   pinned.
 - Target-study PDC to GDC patient and sample relationship rows are not release-pinned.
+- Exact Discovery cohort membership and GDC input selection remain blocked pending the
+  official target-study crosswalk and one-to-one join checks.
+- The 211 GDC `CPTAC-3 + Gliomas` cases and 111 PDC Discovery catalog cases are not
+  equivalent or directly comparable denominators.
 - No official GDC aliquot relationship is exposed by the live PDC schema.
 - GDC supplies MD5 in the frozen file metadata, not the SHA-256 required by the
   preregistered source-identity gate.
@@ -115,6 +127,7 @@ Unresolved blockers:
 
 The exact next gate is a reviewed private-custody plan that first selects an exhaustive
 open-only PDC file inventory, then freezes target-study patient and sample relationships,
-measures zero, one, and multiple matches, and either obtains an official aliquot-level
-relationship or refuses the four-layer join. No molecular file may be acquired until the
-source-terms and source-identity gates are complete.
+measures zero, one, and multiple matches, resolves exact GDC Discovery membership, and
+either obtains an official aliquot-level relationship or refuses the four-layer join.
+No GDC input may be selected and no molecular file may be acquired until the crosswalk,
+source-terms, and source-identity gates are complete.

@@ -174,11 +174,17 @@ def test_metadata_source_freeze_pins_required_pdc_versions_and_gdc_release() -> 
         gdc,
         {
             "access_decision_id",
+            "candidate_open_file_count",
+            "case_counts_comparable",
+            "case_counts_equivalent",
             "clinical_and_biospecimen_rows_acquired",
+            "discovery_cohort_membership",
             "gliomas_case_count",
+            "input_selection_status",
+            "inventory_role",
             "manifest_path",
             "manifest_sha256",
-            "open_file_count",
+            "pdc_discovery_catalog_case_count",
             "project_id",
             "release_date",
             "release_id",
@@ -189,14 +195,20 @@ def test_metadata_source_freeze_pins_required_pdc_versions_and_gdc_release() -> 
     assert gdc["release_date"] == "2026-08-10"
     assert gdc["project_id"] == "CPTAC-3"
     assert gdc["gliomas_case_count"] == 211
-    assert gdc["open_file_count"] == 498
+    assert gdc["pdc_discovery_catalog_case_count"] == 111
+    assert gdc["candidate_open_file_count"] == 498
+    assert gdc["case_counts_comparable"] is False
+    assert gdc["case_counts_equivalent"] is False
+    assert gdc["discovery_cohort_membership"] == "unresolved"
+    assert gdc["input_selection_status"] == ("blocked-pending-crosswalk-and-one-to-one-joins")
+    assert gdc["inventory_role"] == "candidate-metadata-superset"
     assert gdc["clinical_and_biospecimen_rows_acquired"] is False
     assert gdc["manifest_path"] == GDC_MANIFEST.name
     assert gdc["manifest_sha256"] == sha256_file(GDC_MANIFEST)
     _assert_timestamp(gdc["retrieved_at"])
 
 
-def test_gdc_manifest_contains_only_open_preregistered_file_metadata() -> None:
+def test_gdc_manifest_is_candidate_open_workflow_metadata_superset() -> None:
     record = _canonical(GDC_MANIFEST)
     _assert_keys(
         record,
@@ -214,14 +226,20 @@ def test_gdc_manifest_contains_only_open_preregistered_file_metadata() -> None:
         },
     )
     assert record["schema_version"] == "voxelscope/gbm-gdc-open-file-manifest/v1"
-    assert record["manifest_id"] == "gdc-cptac-3-gliomas-open-files-dr46-v1"
+    assert record["manifest_id"] == (
+        "gdc-cptac-3-gliomas-open-workflow-candidate-inventory-dr46-v1"
+    )
     _assert_timestamp(record["retrieved_at"])
     for url in record["evidence_urls"]:
         _assert_official_https(url)
 
     assert record["metadata_boundary"] == {
         "case_fields_requested": False,
+        "candidate_metadata_superset": True,
+        "case_count_equivalence_authorized": False,
         "clinical_or_biospecimen_rows_acquired": False,
+        "cohort_membership_resolved": False,
+        "discovery_cohort_input_selection_authorized": False,
         "file_bytes_acquired": False,
         "file_metadata_only": True,
         "patient_or_sample_fields_requested": False,
@@ -324,6 +342,19 @@ def test_gdc_manifest_contains_only_open_preregistered_file_metadata() -> None:
     assert scope["case_count_query"]["size"] == 0
     assert scope["case_count_query"]["rows_returned"] == 0
     assert scope["case_count_query"]["total_case_count"] == 211
+    assert scope["candidate_inventory_only"] is True
+    assert scope["inventory_role"] == ("candidate-gdc-metadata-superset-for-eligible-workflows")
+    assert scope["discovery_cohort_membership"] == (
+        "unresolved-pending-official-target-study-crosswalk"
+    )
+    assert scope["selection_status"] == "blocked"
+    assert "one-to-one join checks" in scope["selection_gate"]
+    assert scope["cohort_case_counts"] == {
+        "comparison_authorized": False,
+        "equivalent": False,
+        "gdc_cptac_3_gliomas": 211,
+        "pdc_discovery_catalog": 111,
+    }
 
 
 def test_access_decisions_refuse_pdc_and_qualify_only_gdc_metadata() -> None:
@@ -356,7 +387,7 @@ def test_access_decisions_refuse_pdc_and_qualify_only_gdc_metadata() -> None:
     decisions = {item["decision_id"]: item for item in record["decisions"]}
     assert set(decisions) == {
         *(f"{study_id.lower()}-access" for study_id in EXPECTED_PDC),
-        "gdc-cptac-3-dr46-access",
+        "gdc-cptac-3-dr46-candidate-metadata-openness",
     }
     for study_id in EXPECTED_PDC:
         item = decisions[f"{study_id.lower()}-access"]
@@ -394,15 +425,40 @@ def test_access_decisions_refuse_pdc_and_qualify_only_gdc_metadata() -> None:
         for url in item["evidence_urls"]:
             _assert_official_https(url)
 
-    gdc = decisions["gdc-cptac-3-dr46-access"]
-    assert gdc["decision"] == "metadata-qualified"
+    gdc = decisions["gdc-cptac-3-dr46-candidate-metadata-openness"]
+    _assert_keys(
+        gdc,
+        {
+            "accept_dua_required",
+            "cohort_inclusion",
+            "credential_or_application_status",
+            "decision",
+            "decision_id",
+            "evidence_urls",
+            "file_byte_access",
+            "file_bytes_acquired",
+            "input_selection",
+            "metadata_access",
+            "next_gate",
+            "probe",
+            "provider",
+            "scope",
+            "terms",
+            "terms_status",
+        },
+    )
+    assert gdc["decision"] == "metadata-openness-qualified"
     assert gdc["terms_status"] == "verified"
     assert gdc["metadata_access"] == "open-without-credential"
-    assert gdc["file_byte_access"] == "open-by-policy-for-every-frozen-record"
+    assert gdc["file_byte_access"] == "not-exercised"
     assert gdc["file_bytes_acquired"] is False
     assert gdc["accept_dua_required"] is False
+    assert gdc["cohort_inclusion"] == "not-qualified"
+    assert gdc["input_selection"] == ("blocked-pending-crosswalk-and-one-to-one-joins")
     assert gdc["probe"]["file_count"] == 498
+    assert gdc["probe"]["inventory_role"] == "candidate-metadata-superset"
     assert gdc["probe"]["source_hash_field"] == "md5sum"
+    assert "cohort inclusion is unresolved" in gdc["scope"].lower()
 
 
 def test_crosswalk_decision_blocks_execution_at_every_required_level() -> None:
@@ -484,6 +540,10 @@ def test_freeze_receipt_closes_digests_and_replays_byte_identically() -> None:
     assert record["controlled_acquisition_performed"] is False
     assert record["credentials_used"] is False
     assert record["patient_level_rows_acquired"] is False
+    assert any(
+        warning.startswith("The 498 GDC file records are a candidate metadata superset.")
+        for warning in record["warnings"]
+    )
     _assert_timestamp(record["generated_at"])
 
     expected_paths = [
@@ -532,3 +592,6 @@ def test_public_freeze_has_no_sensitive_acquisition_or_disallowed_copy() -> None
     assert "Research evidence only. Not for diagnosis or treatment decisions." in milestone
     assert "real-data adapter gate remains **NO-GO**" in milestone
     assert "No patient, sample, or aliquot join may execute" in milestone
+    assert "This inventory is not a selected analysis input" in milestone
+    assert "must not be compared with or treated as equivalent" in milestone
+    assert "This qualifies metadata openness only." in milestone
