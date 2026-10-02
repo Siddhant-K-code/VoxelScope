@@ -200,6 +200,8 @@ See [the corrected model-loading readiness record](docs/milestone-8-model-loadin
 
 The [Glioblastoma Evidence Atlas product contract](docs/glioblastoma-evidence-atlas-v0.md) extends the executable synthetic slice merged in PR #12 at commit `88d074b9116d913ce720bd1a5e72a7e24933110f`. Neither the merged slice nor the future phases implement production source ingestion, authorize current private assets for a new use, or change an existing NO-GO gate.
 
+The proposed Glioblastoma Evidence Atlas has a separate [open-data source qualification and first-study preregistration](docs/research/glioblastoma-evidence-atlas-source-qualification-v1.md). It qualifies molecular sources without authorizing controlled MRI, downloading patient data, or changing the existing inference milestones.
+
 ## Next gate
 
 Obtain a separate explicit owner approval bound to the final Milestone 8 plan SHA-256 and reviewed private model custody receipt/archive identities, then run the private CPU-only model-loading qualification exactly once. That approval authorizes only the closed extraction and stop-after-load qualification; it does not authorize model input, forward, inference, GPU/MPS, network, cloud, or spend. Model-training overlap and source-label versus model-output semantics remain unresolved.
