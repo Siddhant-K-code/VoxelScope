@@ -24,6 +24,9 @@ The current package provides:
 
 - Strict canonical JSON and raw-array content hashes.
 - Deterministic synthetic glioblastoma protein evidence cards with replay receipts.
+- A synthetic evidence communication compiler with typed model drafts, independent
+  claim verification, canonical prose, refusal receipts, and an offline local-model
+  benchmark.
 - Typed study, volume, model, window, timing, output, drift, receipt, and refusal records.
 - Deterministic sliding-window enumeration in `(Z, Y, X)` order.
 - Explicit high-side zero padding for volumes smaller than the ROI.
@@ -64,6 +67,9 @@ src/voxelscope/
   fixtures.py    Deterministic synthetic evidence generation
   gbm_atlas.py   Synthetic protein evidence cards and replay receipts
   gbm_atlas_cli.py  Separate offline synthetic atlas command-line interface
+  evidence_communication_records.py  Strict communication and receipt schemas
+  evidence_communication.py  Deterministic claim verifier, compiler, and benchmark
+  evidence_communication_cli.py  Separate offline communication command-line interface
   custody_records.py  Versioned source and acquisition records
   real_data_contract.py  Trusted milestone 2 source and plan pins
   one_volume_records.py  Typed milestone 3 source-decision evidence
@@ -117,6 +123,11 @@ voxelscope fixture build --output build/evidence
 python -m voxelscope.gbm_atlas_cli build \
   --manifest research/gbm-evidence-atlas-v1/source-manifest.json \
   --output build/gbm-atlas
+python -m voxelscope.evidence_communication_cli benchmark \
+  --atlas build/gbm-atlas/atlas.json \
+  --fixtures research/gbm-evidence-communication-benchmark-v2/benchmark-fixtures.json \
+  --runner recorded \
+  --output build/evidence-communication-benchmark
 voxelscope windows build --manifest build/evidence/study-manifest.json --output build/windows
 voxelscope verify --bundle build/evidence
 voxelscope drift compare \
@@ -179,6 +190,31 @@ synthetic_only=true ranking_performed=false
 ```
 
 The receipt records every source digest, `voxelscope/gbm-evidence-transform/v1`, exclusions, warnings, and the canonical atlas digest. Ambiguous identifier mappings stop the build. Unmapped identifiers remain explicit exclusions.
+
+## Evidence communication compiler
+
+The synthetic evidence communication compiler lets a local model propose only typed,
+source-cited claims. Deterministic code derives the required facts and caveats,
+verifies every field against the source card, excludes unsupported claims, compiles
+canonical researcher-facing prose, and closes a receipt. The model cannot authorize
+its own claims or supply accepted final prose. Trusted verified claims contain only
+canonical typed fields and deterministic identities, never raw model text.
+
+The committed benchmark runs offline without a model installation or network. It
+includes accepted, partially excluded, and refused recorded drafts. A localhost-only
+Ollama adapter can evaluate an already installed model without adding a mandatory
+dependency or downloading model files. Envelope noncompliance is retained as a
+digest-safe refused result instead of aborting the remaining runs.
+
+The frozen v2 recorded result emits `122 / 158` required facts and `116 / 148`
+required caveats. Its independently verified drafts cover `158 / 158` facts and
+`148 / 148` caveats. Invalid model output is `0 / 18`, and semantic variance is
+`1 / 9`.
+
+See the
+[evidence communication compiler and study protocol](docs/evidence-communication-compiler-v2.md)
+for trust boundaries, exact commands, metric denominators, local-runner setup, and
+measurement limitations.
 
 ## Data lineage rule
 
