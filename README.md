@@ -125,7 +125,7 @@ python -m voxelscope.gbm_atlas_cli build \
   --output build/gbm-atlas
 python -m voxelscope.evidence_communication_cli benchmark \
   --atlas build/gbm-atlas/atlas.json \
-  --fixtures research/gbm-evidence-communication-benchmark-v1/benchmark-fixtures.json \
+  --fixtures research/gbm-evidence-communication-benchmark-v2/benchmark-fixtures.json \
   --runner recorded \
   --output build/evidence-communication-benchmark
 voxelscope windows build --manifest build/evidence/study-manifest.json --output build/windows
@@ -197,15 +197,22 @@ The synthetic evidence communication compiler lets a local model propose only ty
 source-cited claims. Deterministic code derives the required facts and caveats,
 verifies every field against the source card, excludes unsupported claims, compiles
 canonical researcher-facing prose, and closes a receipt. The model cannot authorize
-its own claims or supply accepted final prose.
+its own claims or supply accepted final prose. Trusted verified claims contain only
+canonical typed fields and deterministic identities, never raw model text.
 
 The committed benchmark runs offline without a model installation or network. It
 includes accepted, partially excluded, and refused recorded drafts. A localhost-only
 Ollama adapter can evaluate an already installed model without adding a mandatory
-dependency or downloading model files.
+dependency or downloading model files. Envelope noncompliance is retained as a
+digest-safe refused result instead of aborting the remaining runs.
+
+The frozen v2 recorded result emits `122 / 158` required facts and `116 / 148`
+required caveats. Its independently verified drafts cover `158 / 158` facts and
+`148 / 148` caveats. Invalid model output is `0 / 18`, and semantic variance is
+`1 / 9`.
 
 See the
-[evidence communication compiler and study protocol](docs/evidence-communication-compiler-v1.md)
+[evidence communication compiler and study protocol](docs/evidence-communication-compiler-v2.md)
 for trust boundaries, exact commands, metric denominators, local-runner setup, and
 measurement limitations.
 

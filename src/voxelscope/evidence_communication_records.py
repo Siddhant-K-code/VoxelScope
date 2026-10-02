@@ -6,7 +6,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .canonical import EvidenceError, require_sha256
+from .canonical import (
+    EvidenceError,
+    canonical_json_bytes,
+    require_sha256,
+    sha256_bytes,
+)
 from .records import (
     require_bool,
     require_int,
@@ -17,12 +22,12 @@ from .records import (
     strict_fields,
 )
 
-REQUEST_SCHEMA = "voxelscope/evidence-communication-request/v1"
-DRAFT_SCHEMA = "voxelscope/evidence-communication-model-draft/v1"
-ARTIFACT_SCHEMA = "voxelscope/verified-evidence-communication/v1"
-RECEIPT_SCHEMA = "voxelscope/evidence-communication-receipt/v1"
-TRANSFORMATION_ID = "voxelscope/evidence-communication-compiler/v1"
-VERIFIER_VERSION = "voxelscope/evidence-communication-verifier/v1"
+REQUEST_SCHEMA = "voxelscope/evidence-communication-request/v2"
+DRAFT_SCHEMA = "voxelscope/evidence-communication-model-draft/v2"
+ARTIFACT_SCHEMA = "voxelscope/verified-evidence-communication/v2"
+RECEIPT_SCHEMA = "voxelscope/evidence-communication-receipt/v2"
+TRANSFORMATION_ID = "voxelscope/evidence-communication-compiler/v2"
+VERIFIER_VERSION = "voxelscope/evidence-communication-verifier/v2"
 
 CLAIM_TYPES = frozenset(
     {
@@ -468,31 +473,161 @@ class ClaimExclusion:
 
 
 @dataclass(frozen=True)
-class VerifiedSentence:
-    claim_ids: tuple[str, ...]
+class VerifiedClaim:
+    canonical_gene_id: str
+    canonical_protein_id: str
+    claim_type: str
+    comparison_key: str | None
+    context: str | None
+    direction: str | None
+    modality: str | None
+    requirement_ids: tuple[str, ...]
     source_ids: tuple[str, ...]
-    text: str
+    state: str | None
+    unit: str | None
+    value: float | None
+    verified_claim_id: str
 
     def __post_init__(self) -> None:
-        if not self.claim_ids or not self.source_ids:
-            raise EvidenceError("unmapped_verified_sentence", self.text)
-        _require_unique(self.claim_ids, "sentence claim_ids")
-        _require_unique(self.source_ids, "sentence source_ids")
+        if self.claim_type not in CLAIM_TYPES:
+            raise EvidenceError("unsupported_claim_type", self.claim_type)
+        if not self.source_ids:
+            raise EvidenceError("missing_source_citation", self.verified_claim_id)
+        _require_unique(self.source_ids, "verified claim source_ids")
+        _require_unique(self.requirement_ids, "verified claim requirement_ids")
+        prefix = "verified:"
+        if not self.verified_claim_id.startswith(prefix):
+            raise EvidenceError("invalid_verified_claim_id", self.verified_claim_id)
+        require_sha256(
+            self.verified_claim_id.removeprefix(prefix),
+            "verified claim digest",
+        )
+        expected_id = prefix + sha256_bytes(canonical_json_bytes(self.semantic_dict()))
+        if self.verified_claim_id != expected_id:
+            raise EvidenceError("verified_claim_digest_mismatch", self.verified_claim_id)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> VerifiedSentence:
-        value = strict_fields(data, {"claim_ids", "source_ids", "text"}, "VerifiedSentence")
+    def from_dict(cls, data: dict[str, Any]) -> VerifiedClaim:
+        value = strict_fields(
+            data,
+            {
+                "canonical_gene_id",
+                "canonical_protein_id",
+                "claim_type",
+                "comparison_key",
+                "context",
+                "direction",
+                "modality",
+                "requirement_ids",
+                "source_ids",
+                "state",
+                "unit",
+                "value",
+                "verified_claim_id",
+            },
+            "VerifiedClaim",
+        )
         return cls(
-            _strings(value["claim_ids"], "claim_ids"),
+            require_string(value["canonical_gene_id"], "canonical_gene_id"),
+            require_string(value["canonical_protein_id"], "canonical_protein_id"),
+            require_string(value["claim_type"], "claim_type"),
+            _optional_string(value["comparison_key"], "comparison_key"),
+            _optional_string(value["context"], "context"),
+            _optional_string(value["direction"], "direction"),
+            _optional_string(value["modality"], "modality"),
+            _strings(value["requirement_ids"], "requirement_ids"),
             _strings(value["source_ids"], "source_ids"),
-            require_string(value["text"], "text"),
+            _optional_string(value["state"], "state"),
+            _optional_string(value["unit"], "unit"),
+            _optional_number(value["value"], "value"),
+            require_string(value["verified_claim_id"], "verified_claim_id"),
+        )
+
+    def semantic_dict(self) -> dict[str, Any]:
+        return {
+            "canonical_gene_id": self.canonical_gene_id,
+            "canonical_protein_id": self.canonical_protein_id,
+            "claim_type": self.claim_type,
+            "comparison_key": self.comparison_key,
+            "context": self.context,
+            "direction": self.direction,
+            "modality": self.modality,
+            "requirement_ids": list(self.requirement_ids),
+            "source_ids": list(self.source_ids),
+            "state": self.state,
+            "unit": self.unit,
+            "value": self.value,
+        }
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            **self.semantic_dict(),
+            "verified_claim_id": self.verified_claim_id,
+        }
+
+
+@dataclass(frozen=True)
+class InvalidModelOutput:
+    error_code: str
+    output_sha256: str
+    output_size_bytes: int
+
+    def __post_init__(self) -> None:
+        require_sha256(self.output_sha256, "model output sha256")
+        if self.output_size_bytes < 0:
+            raise EvidenceError("invalid_model_output_size", str(self.output_size_bytes))
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> InvalidModelOutput:
+        value = strict_fields(
+            data,
+            {"error_code", "output_sha256", "output_size_bytes"},
+            "InvalidModelOutput",
+        )
+        return cls(
+            require_string(value["error_code"], "error_code"),
+            require_string(value["output_sha256"], "output_sha256"),
+            require_int(value["output_size_bytes"], "output_size_bytes"),
         )
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "claim_ids": list(self.claim_ids),
+            "error_code": self.error_code,
+            "output_sha256": self.output_sha256,
+            "output_size_bytes": self.output_size_bytes,
+        }
+
+
+@dataclass(frozen=True)
+class VerifiedSentence:
+    source_ids: tuple[str, ...]
+    text: str
+    verified_claim_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not self.verified_claim_ids or not self.source_ids:
+            raise EvidenceError("unmapped_verified_sentence", self.text)
+        _require_unique(self.verified_claim_ids, "sentence verified_claim_ids")
+        _require_unique(self.source_ids, "sentence source_ids")
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> VerifiedSentence:
+        value = strict_fields(
+            data,
+            {"source_ids", "text", "verified_claim_ids"},
+            "VerifiedSentence",
+        )
+        return cls(
+            _strings(value["source_ids"], "source_ids"),
+            require_string(value["text"], "text"),
+            _strings(value["verified_claim_ids"], "verified_claim_ids"),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
             "source_ids": list(self.source_ids),
             "text": self.text,
+            "verified_claim_ids": list(self.verified_claim_ids),
         }
 
 
@@ -527,10 +662,10 @@ class Coverage:
 
 @dataclass(frozen=True)
 class VerifiedCommunicationArtifact:
-    accepted_claims: tuple[ProposedClaim, ...]
-    caveat_coverage: Coverage
+    emitted_caveat_coverage: Coverage
+    emitted_fact_coverage: Coverage
     exclusions: tuple[ClaimExclusion, ...]
-    fact_coverage: Coverage
+    invalid_model_output: InvalidModelOutput | None
     prose: str
     refusal_reasons: tuple[str, ...]
     request_id: str
@@ -539,6 +674,9 @@ class VerifiedCommunicationArtifact:
     source_atlas_sha256: str
     source_card_sha256: str
     terminal_state: str
+    verified_claims: tuple[VerifiedClaim, ...]
+    verified_draft_caveat_coverage: Coverage
+    verified_draft_fact_coverage: Coverage
     warnings: tuple[str, ...]
 
     def __post_init__(self) -> None:
@@ -548,21 +686,59 @@ class VerifiedCommunicationArtifact:
             raise EvidenceError("invalid_terminal_state", self.terminal_state)
         require_sha256(self.source_atlas_sha256, "source_atlas_sha256")
         require_sha256(self.source_card_sha256, "source_card_sha256")
+        verified_claims = {item.verified_claim_id: item for item in self.verified_claims}
+        if len(verified_claims) != len(self.verified_claims):
+            raise EvidenceError("duplicate_verified_claim_id", self.request_id)
+        if (
+            self.emitted_fact_coverage.denominator != self.verified_draft_fact_coverage.denominator
+            or self.emitted_caveat_coverage.denominator
+            != self.verified_draft_caveat_coverage.denominator
+        ):
+            raise EvidenceError("coverage_denominator_mismatch", self.request_id)
         if self.terminal_state == "refused" and (self.prose or self.sentences):
             raise EvidenceError("refused_artifact_has_prose", self.request_id)
+        if self.terminal_state == "refused" and (
+            self.emitted_fact_coverage.numerator != 0 or self.emitted_caveat_coverage.numerator != 0
+        ):
+            raise EvidenceError("refused_artifact_has_emitted_coverage", self.request_id)
+        if self.terminal_state != "refused" and (
+            self.emitted_fact_coverage != self.verified_draft_fact_coverage
+            or self.emitted_caveat_coverage != self.verified_draft_caveat_coverage
+        ):
+            raise EvidenceError("emitted_coverage_mismatch", self.request_id)
+        if self.invalid_model_output is not None and (
+            self.terminal_state != "refused" or self.verified_claims or self.exclusions
+        ):
+            raise EvidenceError("invalid_model_output_artifact_mismatch", self.request_id)
         sentence_text = " ".join(item.text for item in self.sentences)
         if self.terminal_state != "refused" and self.prose != sentence_text:
             raise EvidenceError("prose_sentence_mismatch", self.request_id)
+        mapped_claim_ids: set[str] = set()
+        for sentence in self.sentences:
+            sentence_claims: list[VerifiedClaim] = []
+            for claim_id in sentence.verified_claim_ids:
+                claim = verified_claims.get(claim_id)
+                if claim is None:
+                    raise EvidenceError("unknown_sentence_verified_claim", claim_id)
+                sentence_claims.append(claim)
+                mapped_claim_ids.add(claim_id)
+            expected_sources = {
+                source_id for claim in sentence_claims for source_id in claim.source_ids
+            }
+            if set(sentence.source_ids) != expected_sources:
+                raise EvidenceError("sentence_source_mapping_mismatch", sentence.text)
+        if self.terminal_state != "refused" and mapped_claim_ids != set(verified_claims):
+            raise EvidenceError("unmapped_verified_claim", self.request_id)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> VerifiedCommunicationArtifact:
         value = strict_fields(
             data,
             {
-                "accepted_claims",
-                "caveat_coverage",
+                "emitted_caveat_coverage",
+                "emitted_fact_coverage",
                 "exclusions",
-                "fact_coverage",
+                "invalid_model_output",
                 "prose",
                 "refusal_reasons",
                 "request_id",
@@ -571,21 +747,33 @@ class VerifiedCommunicationArtifact:
                 "source_atlas_sha256",
                 "source_card_sha256",
                 "terminal_state",
+                "verified_claims",
+                "verified_draft_caveat_coverage",
+                "verified_draft_fact_coverage",
                 "warnings",
             },
             "VerifiedCommunicationArtifact",
         )
+        invalid_value = value["invalid_model_output"]
         return cls(
-            tuple(
-                ProposedClaim.from_dict(require_object(item, "accepted claim"))
-                for item in require_list(value["accepted_claims"], "accepted_claims")
+            Coverage.from_dict(
+                require_object(
+                    value["emitted_caveat_coverage"],
+                    "emitted_caveat_coverage",
+                )
             ),
-            Coverage.from_dict(require_object(value["caveat_coverage"], "caveat_coverage")),
+            Coverage.from_dict(
+                require_object(value["emitted_fact_coverage"], "emitted_fact_coverage")
+            ),
             tuple(
                 ClaimExclusion.from_dict(require_object(item, "claim exclusion"))
                 for item in require_list(value["exclusions"], "exclusions")
             ),
-            Coverage.from_dict(require_object(value["fact_coverage"], "fact_coverage")),
+            (
+                InvalidModelOutput.from_dict(require_object(invalid_value, "invalid_model_output"))
+                if invalid_value is not None
+                else None
+            ),
             require_string(value["prose"], "prose", nonempty=False),
             _strings(value["refusal_reasons"], "refusal_reasons"),
             require_string(value["request_id"], "request_id"),
@@ -597,15 +785,35 @@ class VerifiedCommunicationArtifact:
             require_string(value["source_atlas_sha256"], "source_atlas_sha256"),
             require_string(value["source_card_sha256"], "source_card_sha256"),
             require_string(value["terminal_state"], "terminal_state"),
+            tuple(
+                VerifiedClaim.from_dict(require_object(item, "verified claim"))
+                for item in require_list(value["verified_claims"], "verified_claims")
+            ),
+            Coverage.from_dict(
+                require_object(
+                    value["verified_draft_caveat_coverage"],
+                    "verified_draft_caveat_coverage",
+                )
+            ),
+            Coverage.from_dict(
+                require_object(
+                    value["verified_draft_fact_coverage"],
+                    "verified_draft_fact_coverage",
+                )
+            ),
             _strings(value["warnings"], "warnings"),
         )
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "accepted_claims": [item.to_dict() for item in self.accepted_claims],
-            "caveat_coverage": self.caveat_coverage.to_dict(),
+            "emitted_caveat_coverage": self.emitted_caveat_coverage.to_dict(),
+            "emitted_fact_coverage": self.emitted_fact_coverage.to_dict(),
             "exclusions": [item.to_dict() for item in self.exclusions],
-            "fact_coverage": self.fact_coverage.to_dict(),
+            "invalid_model_output": (
+                self.invalid_model_output.to_dict()
+                if self.invalid_model_output is not None
+                else None
+            ),
             "prose": self.prose,
             "refusal_reasons": list(self.refusal_reasons),
             "request_id": self.request_id,
@@ -614,6 +822,9 @@ class VerifiedCommunicationArtifact:
             "source_atlas_sha256": self.source_atlas_sha256,
             "source_card_sha256": self.source_card_sha256,
             "terminal_state": self.terminal_state,
+            "verified_claims": [item.to_dict() for item in self.verified_claims],
+            "verified_draft_caveat_coverage": (self.verified_draft_caveat_coverage.to_dict()),
+            "verified_draft_fact_coverage": (self.verified_draft_fact_coverage.to_dict()),
             "warnings": list(self.warnings),
         }
 
@@ -622,8 +833,9 @@ class VerifiedCommunicationArtifact:
 class CommunicationReceipt:
     artifact_sha256: str
     communication_terminal_state: str
-    draft_sha256: str
+    draft_sha256: str | None
     exclusions: tuple[ClaimExclusion, ...]
+    invalid_model_output: InvalidModelOutput | None
     model_identity: ModelIdentity
     prompt_identity: PromptIdentity
     request_id: str
@@ -650,12 +862,19 @@ class CommunicationReceipt:
             raise EvidenceError("unsupported_verifier", self.verifier_version)
         for field_name, value in (
             ("artifact_sha256", self.artifact_sha256),
-            ("draft_sha256", self.draft_sha256),
             ("request_sha256", self.request_sha256),
             ("source_atlas_sha256", self.source_atlas_sha256),
             ("source_card_sha256", self.source_card_sha256),
         ):
             require_sha256(value, field_name)
+        if self.draft_sha256 is not None:
+            require_sha256(self.draft_sha256, "draft_sha256")
+        if (self.draft_sha256 is None) == (self.invalid_model_output is None):
+            raise EvidenceError("receipt_model_output_identity_mismatch", self.request_id)
+        if self.invalid_model_output is not None and self.exclusions:
+            raise EvidenceError("invalid_output_receipt_has_exclusions", self.request_id)
+        if self.invalid_model_output is not None and self.communication_terminal_state != "refused":
+            raise EvidenceError("invalid_output_receipt_not_refused", self.request_id)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CommunicationReceipt:
@@ -666,6 +885,7 @@ class CommunicationReceipt:
                 "communication_terminal_state",
                 "draft_sha256",
                 "exclusions",
+                "invalid_model_output",
                 "model_identity",
                 "prompt_identity",
                 "request_id",
@@ -687,10 +907,17 @@ class CommunicationReceipt:
                 value["communication_terminal_state"],
                 "communication_terminal_state",
             ),
-            require_string(value["draft_sha256"], "draft_sha256"),
+            _optional_string(value["draft_sha256"], "draft_sha256"),
             tuple(
                 ClaimExclusion.from_dict(require_object(item, "claim exclusion"))
                 for item in require_list(value["exclusions"], "exclusions")
+            ),
+            (
+                InvalidModelOutput.from_dict(
+                    require_object(value["invalid_model_output"], "invalid_model_output")
+                )
+                if value["invalid_model_output"] is not None
+                else None
             ),
             ModelIdentity.from_dict(require_object(value["model_identity"], "model_identity")),
             PromptIdentity.from_dict(require_object(value["prompt_identity"], "prompt_identity")),
@@ -712,6 +939,11 @@ class CommunicationReceipt:
             "communication_terminal_state": self.communication_terminal_state,
             "draft_sha256": self.draft_sha256,
             "exclusions": [item.to_dict() for item in self.exclusions],
+            "invalid_model_output": (
+                self.invalid_model_output.to_dict()
+                if self.invalid_model_output is not None
+                else None
+            ),
             "model_identity": self.model_identity.to_dict(),
             "prompt_identity": self.prompt_identity.to_dict(),
             "request_id": self.request_id,

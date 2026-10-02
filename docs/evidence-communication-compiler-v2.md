@@ -1,4 +1,4 @@
-# Evidence communication compiler v1
+# Evidence communication compiler v2
 
 ## Status and boundary
 
@@ -44,9 +44,12 @@ Trusted deterministic code performs these steps:
 6. It refuses communication when a required fact or caveat is absent, when not
    measured is converted into negative evidence, or when prohibited clinical,
    causal, certainty, ranking, therapeutic-target, or druggability language appears.
-7. It renders canonical prose from accepted typed claims and closes a receipt.
+7. It replaces accepted draft claims with verified claims that contain only checked
+   typed fields and deterministic identities. Raw model text and model-local claim
+   IDs remain untrusted.
+8. It renders canonical prose from verified claims and closes a receipt.
 
-Every accepted sentence carries accepted claim IDs and exact source IDs. Refused
+Every accepted sentence carries verified claim IDs and exact source IDs. Refused
 artifacts contain no researcher-facing prose. Exclusions and refusal reasons remain
 machine-readable and must be displayed by a consumer.
 
@@ -54,14 +57,17 @@ machine-readable and must be displayed by a consumer.
 
 | Schema | Purpose |
 |---|---|
-| `voxelscope/evidence-communication-request/v1` | Binds the request, source identities, prompt, verifier, required evidence, warnings, and complete fact and caveat plan |
-| `voxelscope/evidence-communication-model-draft/v1` | Carries model and runtime identity plus typed, source-cited proposed claims |
-| `voxelscope/verified-evidence-communication/v1` | Carries accepted claims, canonical sentences, exclusions, refusal reasons, coverage, warnings, and terminal state |
-| `voxelscope/evidence-communication-receipt/v1` | Binds request, draft, artifact, source, prompt, model, transformation, verifier, exclusions, warnings, and closed state |
+| `voxelscope/evidence-communication-request/v2` | Binds the request, source identities, prompt, verifier, required evidence, warnings, and complete fact and caveat plan |
+| `voxelscope/evidence-communication-model-draft/v2` | Carries model and runtime identity plus untrusted typed, source-cited proposed claims and draft text |
+| `voxelscope/verified-evidence-communication/v2` | Carries verified typed claims without raw model text, canonical sentences, exclusions, refusal reasons, separate draft and emitted coverage, warnings, and terminal state |
+| `voxelscope/evidence-communication-receipt/v2` | Binds request, parsed draft or digest-safe invalid-output evidence, artifact, source, prompt, model, transformation, verifier, exclusions, warnings, and closed state |
+| `voxelscope/evidence-communication-benchmark-fixture/v2` | Freezes adversarial cases, repeat counts, terminal states, and recorded custody digests |
+| `voxelscope/evidence-communication-benchmark/v2` | Carries per-run custody and semantic digests, separate coverage metrics, invalid-output outcomes, measurements, and aggregate metrics |
 
 The transformation identity is
-`voxelscope/evidence-communication-compiler/v1`. The verifier identity is
-`voxelscope/evidence-communication-verifier/v1`.
+`voxelscope/evidence-communication-compiler/v2`. The verifier identity is
+`voxelscope/evidence-communication-verifier/v2`. The prompt identity is
+`voxelscope/evidence-communication-json/v2`.
 
 Allowed claim types are:
 
@@ -73,7 +79,9 @@ Allowed claim types are:
 - `non_clinical_boundary`
 
 Free prose is not evidence. Every proposed claim includes exact source IDs and typed
-fields. The verifier checks the fields rather than trusting `draft_text`.
+fields. The verifier checks the fields rather than trusting `draft_text`. A verified
+claim is rebuilt from checked fields and assigned a deterministic `verified_claim_id`.
+It contains neither `draft_text` nor the model-local `claim_id`.
 
 ## Availability semantics
 
@@ -132,7 +140,7 @@ Run the committed offline benchmark:
 uv run python -m voxelscope.evidence_communication_cli benchmark \
   --atlas build/gbm-atlas/atlas.json \
   --fixtures \
-    research/gbm-evidence-communication-benchmark-v1/benchmark-fixtures.json \
+    research/gbm-evidence-communication-benchmark-v2/benchmark-fixtures.json \
   --runner recorded \
   --output build/evidence-communication-benchmark
 ```
@@ -167,10 +175,13 @@ The exact committed recorded-run metrics are:
 | Metric | Result |
 |---|---:|
 | Unsupported-claim rate | `8 / 278 = 0.02877697841726619` |
-| Required-fact coverage | `158 / 158 = 1.0` |
-| Required-caveat retention | `148 / 148 = 1.0` |
+| Emitted fact coverage | `122 / 158 = 0.7721518987341772` |
+| Emitted caveat coverage | `116 / 148 = 0.7837837837837838` |
+| Verified-draft fact coverage | `158 / 158 = 1.0` |
+| Verified-draft caveat retention | `148 / 148 = 1.0` |
 | Evidence-citation validity | `336 / 338 = 0.9940828402366864` |
 | Replay semantic variance | `1 / 9 = 0.1111111111111111` |
+| Invalid-model-output rate | `0 / 18 = 0.0` |
 | Accepted or partially excluded runs | `14` |
 | Refused runs | `4` |
 
@@ -182,14 +193,26 @@ refused, and the distinct refusal evidence remains visible.
 
 - Unsupported-claim rate is excluded proposed claims divided by all proposed claims
   across all runs.
-- Required-fact coverage is verified fact requirements divided by all required fact
-  requirements across all runs.
-- Required-caveat retention is verified caveat requirements divided by all required
-  caveat requirements across all runs.
+- Emitted fact coverage is fact requirements represented in final canonical prose
+  divided by all fact requirements across all runs. A refused run contributes zero
+  to the numerator and all of its requirements to the denominator.
+- Emitted caveat coverage is caveat requirements represented in final canonical
+  prose divided by all caveat requirements across all runs. A refused run contributes
+  zero to the numerator and all of its requirements to the denominator.
+- Verified-draft fact coverage is fact requirements backed by draft claims that
+  independently pass verification divided by all fact requirements across all runs.
+- Verified-draft caveat retention is caveat requirements backed by draft claims that
+  independently pass verification divided by all caveat requirements across all runs.
 - Evidence-citation validity is known source-ID occurrences divided by all source-ID
   occurrences in proposed claims.
-- Replay semantic variance is unequal artifact-digest pairs divided by all within-case
-  repeat pairs.
+- Replay semantic variance is unequal semantic-projection digest pairs divided by all
+  within-case repeat pairs. The projection includes terminal state, normalized
+  verified typed claims, canonical prose, coverage, exclusion reason codes, refusal
+  reasons, and invalid-output error code. It excludes raw draft text, model-local
+  claim IDs, and malformed response payload hashes. Full artifact digests remain in
+  each run record for custody.
+- Invalid-model-output rate is runs with model-produced output that cannot parse as
+  the strict JSON envelope divided by all attempted runs.
 - Verifier counts classify every run as accepted, accepted with exclusions, or
   refused. The reported acceptance count combines the first two states.
 
@@ -213,17 +236,20 @@ Then run:
 uv run python -m voxelscope.evidence_communication_cli benchmark \
   --atlas build/gbm-atlas/atlas.json \
   --fixtures \
-    research/gbm-evidence-communication-benchmark-v1/benchmark-fixtures.json \
+    research/gbm-evidence-communication-benchmark-v2/benchmark-fixtures.json \
   --runner ollama \
   --endpoint http://127.0.0.1:11434 \
   --model YOUR_ALREADY_INSTALLED_MODEL \
   --output build/evidence-communication-ollama
 ```
 
-The adapter requests temperature zero and strict JSON. Malformed output fails closed.
-Ollama token counters are recorded when present. The adapter measures request latency.
-Peak process memory and peak Metal memory remain unavailable unless the runner reports
-them.
+The adapter requests temperature zero and strict JSON. Malformed model JSON or an
+invalid model envelope becomes a refused `invalid_model_output` run with an error
+code, output SHA-256, and byte length. The raw malformed response is not placed in an
+accepted artifact. The benchmark continues with the remaining frozen runs. HTTP,
+timeout, and outer Ollama protocol failures abort publication. Ollama token counters
+are recorded when present. The adapter measures request latency. Peak process memory
+and peak Metal memory remain unavailable unless the runner reports them.
 
 ## Publication-ready study protocol
 
@@ -246,16 +272,18 @@ digest, and host measurement capability.
 3. Confirm that the selected local model is already installed. Do not download a
    model as part of the study.
 4. Run every frozen case for the declared repeat count with temperature zero.
-5. Preserve every model envelope, verifier artifact, exclusion, refusal reason,
-   terminal state, and receipt digest.
+5. Preserve every parsed model envelope digest, full artifact digest, semantic digest,
+   exclusion, refusal reason, terminal state, and receipt digest. For malformed model
+   output, preserve only its error code, SHA-256, and byte length.
 6. Re-run the recorded benchmark as the deterministic control.
 7. Report unavailable measurements explicitly.
 
 ### Primary endpoints
 
-Report unsupported-claim rate, required-fact coverage, required-caveat retention,
-evidence-citation validity, replay semantic variance, and verifier acceptance and
-refusal counts using the denominators above.
+Report unsupported-claim rate, emitted fact coverage, emitted caveat coverage,
+verified-draft fact coverage, verified-draft caveat retention, evidence-citation
+validity, replay semantic variance, invalid-model-output rate, and verifier acceptance
+and refusal counts using the denominators above.
 
 ### Secondary measurements
 
@@ -265,9 +293,11 @@ method is declared.
 
 ### Stop and refusal rules
 
-Stop publication if the atlas, fixture, prompt, or verifier identity differs from the
-declared protocol; if an output cannot be parsed under the strict envelope; if a
-receipt does not close; or if any accepted sentence lacks claim and source mappings.
+Stop publication if the atlas, fixture, prompt, transformation, verifier, model, or
+runtime identity differs from the declared protocol; if transport or the outer runner
+protocol fails; if a receipt does not close; or if any accepted sentence lacks exact
+verified-claim and source mappings. Treat model-produced JSON or envelope
+noncompliance as a digest-safe `invalid_model_output` refusal, not a publication stop.
 Preserve refused and negative benchmark outcomes. Do not replace them with safer
 model-generated prose.
 

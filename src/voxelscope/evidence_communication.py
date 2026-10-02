@@ -38,11 +38,13 @@ from .evidence_communication_records import (
     CommunicationReceipt,
     CommunicationRequest,
     Coverage,
+    InvalidModelOutput,
     ModelDraftEnvelope,
     ModelIdentity,
     PlanRequirement,
     PromptIdentity,
     ProposedClaim,
+    VerifiedClaim,
     VerifiedCommunicationArtifact,
     VerifiedSentence,
 )
@@ -56,11 +58,11 @@ from .records import (
     strict_fields,
 )
 
-BENCHMARK_FIXTURE_SCHEMA = "voxelscope/evidence-communication-benchmark-fixture/v1"
-BENCHMARK_SCHEMA = "voxelscope/evidence-communication-benchmark/v1"
-BENCHMARK_RECEIPT_SCHEMA = "voxelscope/evidence-communication-benchmark-receipt/v1"
+BENCHMARK_FIXTURE_SCHEMA = "voxelscope/evidence-communication-benchmark-fixture/v2"
+BENCHMARK_SCHEMA = "voxelscope/evidence-communication-benchmark/v2"
+BENCHMARK_RECEIPT_SCHEMA = "voxelscope/evidence-communication-benchmark-receipt/v2"
 BOUNDARY_TEXT = "Research evidence only. Not for diagnosis or treatment decisions."
-PROMPT_ID = "voxelscope/evidence-communication-json/v1"
+PROMPT_ID = "voxelscope/evidence-communication-json/v2"
 PROMPT_TEXT = (
     "Return only the typed JSON envelope. Cite exact source IDs for every claim. "
     "Do not infer causality, certainty, diagnosis, prognosis, treatment, ranking, "
@@ -70,7 +72,7 @@ PROMPT_IDENTITY = PromptIdentity(PROMPT_ID, sha256_bytes(PROMPT_TEXT.encode("asc
 RECORDED_MODEL_IDENTITY = ModelIdentity(
     adapter="recorded-fixture",
     endpoint=None,
-    model="voxelscope-synthetic-recorded-draft-v1",
+    model="voxelscope-synthetic-recorded-draft-v2",
     runtime="python-stdlib",
 )
 _EXCLUDED_CLAIM_TYPES = (
@@ -121,12 +123,20 @@ class CommunicationBuildResult:
 
 @dataclass(frozen=True)
 class RunnerResult:
-    envelope: ModelDraftEnvelope
+    envelope: ModelDraftEnvelope | None
     input_tokens: int | None
+    invalid_model_output: InvalidModelOutput | None
     latency_ms: float | None
     output_tokens: int | None
     peak_memory_mb: float | None
     peak_metal_memory_mb: float | None
+
+    def __post_init__(self) -> None:
+        if (self.envelope is None) == (self.invalid_model_output is None):
+            raise EvidenceError(
+                "invalid_runner_result",
+                "exactly one envelope or invalid model output is required",
+            )
 
 
 class ModelRunner(Protocol):
@@ -773,11 +783,18 @@ def _prohibited_reason(claim: ProposedClaim) -> str | None:
         ),
         (
             "prohibited_treatment_language",
-            ("treatment", "therapy", "recommend"),
+            ("treatment", "therapy", "recommend", "guide care"),
         ),
         (
             "prohibited_causal_or_certainty_language",
-            (" caus", "proves", "definitive", "certainly", "guarantee"),
+            (
+                " caus",
+                "drives disease",
+                "proves",
+                "definitive",
+                "certainly",
+                "guarantee",
+            ),
         ),
         (
             "prohibited_target_or_druggability_language",
@@ -946,7 +963,39 @@ def _format_value(value: float | None) -> str:
     return format(value, ".15g")
 
 
-def _sentences_for_claim(claim: ProposedClaim) -> tuple[str, ...]:
+def _verified_claim(claim: ProposedClaim) -> VerifiedClaim:
+    semantic = {
+        "canonical_gene_id": claim.canonical_gene_id,
+        "canonical_protein_id": claim.canonical_protein_id,
+        "claim_type": claim.claim_type,
+        "comparison_key": claim.comparison_key,
+        "context": claim.context,
+        "direction": claim.direction,
+        "modality": claim.modality,
+        "requirement_ids": list(claim.requirement_ids),
+        "source_ids": list(claim.source_ids),
+        "state": claim.state,
+        "unit": claim.unit,
+        "value": claim.value,
+    }
+    return VerifiedClaim(
+        canonical_gene_id=claim.canonical_gene_id,
+        canonical_protein_id=claim.canonical_protein_id,
+        claim_type=claim.claim_type,
+        comparison_key=claim.comparison_key,
+        context=claim.context,
+        direction=claim.direction,
+        modality=claim.modality,
+        requirement_ids=claim.requirement_ids,
+        source_ids=claim.source_ids,
+        state=claim.state,
+        unit=claim.unit,
+        value=claim.value,
+        verified_claim_id=("verified:" + sha256_bytes(canonical_json_bytes(semantic))),
+    )
+
+
+def _sentences_for_claim(claim: VerifiedClaim) -> tuple[str, ...]:
     if claim.claim_type == "entity_identity":
         return (
             "This synthetic card describes Ensembl gene "
@@ -994,7 +1043,7 @@ def _sentences_for_claim(claim: ProposedClaim) -> tuple[str, ...]:
         )
     if claim.claim_type == "non_clinical_boundary":
         return (BOUNDARY_TEXT,)
-    raise EvidenceError("unrenderable_verified_claim", claim.claim_id)
+    raise EvidenceError("unrenderable_verified_claim", claim.verified_claim_id)
 
 
 def verify_model_draft(
@@ -1033,7 +1082,7 @@ def verify_model_draft(
             "draft identity does not match the communication request",
         )
     known_sources = _known_source_ids(request, atlas)
-    accepted: list[ProposedClaim] = []
+    verified_proposals: list[ProposedClaim] = []
     exclusions: list[ClaimExclusion] = []
     hard_refusals: set[str] = set()
     fulfilled: set[str] = set()
@@ -1077,7 +1126,7 @@ def verify_model_draft(
                 )
             )
             continue
-        accepted.append(claim)
+        verified_proposals.append(claim)
         fulfilled.update(expected)
     facts = tuple(item for item in request.plan if item.kind == "fact")
     caveats = tuple(item for item in request.plan if item.kind == "caveat")
@@ -1097,37 +1146,57 @@ def verify_model_draft(
     else:
         terminal_state = "accepted"
     fact_numerator = len(fact_ids.intersection(fulfilled))
-    fact_coverage = Coverage(
+    verified_draft_fact_coverage = Coverage(
         len(facts),
         fact_numerator,
         fact_numerator / len(facts),
     )
     caveat_numerator = len(caveat_ids.intersection(fulfilled))
-    caveat_coverage = Coverage(
+    verified_draft_caveat_coverage = Coverage(
         len(caveats),
         caveat_numerator,
         caveat_numerator / len(caveats),
     )
+    emitted_fact_numerator = fact_numerator if terminal_state != "refused" else 0
+    emitted_caveat_numerator = caveat_numerator if terminal_state != "refused" else 0
+    emitted_fact_coverage = Coverage(
+        len(facts),
+        emitted_fact_numerator,
+        emitted_fact_numerator / len(facts),
+    )
+    emitted_caveat_coverage = Coverage(
+        len(caveats),
+        emitted_caveat_numerator,
+        emitted_caveat_numerator / len(caveats),
+    )
     sentences: list[VerifiedSentence] = []
-    if terminal_state != "refused":
-        requirement_order = {item.requirement_id: index for index, item in enumerate(request.plan)}
-        accepted.sort(
-            key=lambda item: (
-                min(requirement_order[value] for value in item.requirement_ids),
-                item.claim_id,
-            )
+    verified_claims: list[VerifiedClaim] = []
+    requirement_order = {item.requirement_id: index for index, item in enumerate(request.plan)}
+    verified_proposals.sort(
+        key=lambda item: (
+            min(requirement_order[value] for value in item.requirement_ids),
+            item.claim_id,
         )
-        for claim in accepted:
-            for text in _sentences_for_claim(claim):
-                sentences.append(VerifiedSentence((claim.claim_id,), claim.source_ids, text))
+    )
+    verified_claims = [_verified_claim(item) for item in verified_proposals]
+    if terminal_state != "refused":
+        for verified_claim in verified_claims:
+            for text in _sentences_for_claim(verified_claim):
+                sentences.append(
+                    VerifiedSentence(
+                        verified_claim.source_ids,
+                        text,
+                        (verified_claim.verified_claim_id,),
+                    )
+                )
     warnings = set(request.warnings)
     warnings.update(f"excluded:{item.claim_id}:{item.reason}" for item in exclusions)
     warnings.update(f"refused:{item}" for item in refusal_reasons)
     artifact = VerifiedCommunicationArtifact(
-        accepted_claims=tuple(accepted),
-        caveat_coverage=caveat_coverage,
+        emitted_caveat_coverage=emitted_caveat_coverage,
+        emitted_fact_coverage=emitted_fact_coverage,
         exclusions=tuple(sorted(exclusions, key=lambda item: item.claim_id)),
-        fact_coverage=fact_coverage,
+        invalid_model_output=None,
         prose=" ".join(item.text for item in sentences),
         refusal_reasons=tuple(sorted(refusal_reasons)),
         request_id=request.request_id,
@@ -1136,6 +1205,9 @@ def verify_model_draft(
         source_atlas_sha256=request.source_atlas_sha256,
         source_card_sha256=request.source_card_sha256,
         terminal_state=terminal_state,
+        verified_claims=tuple(verified_claims),
+        verified_draft_caveat_coverage=verified_draft_caveat_coverage,
+        verified_draft_fact_coverage=verified_draft_fact_coverage,
         warnings=tuple(sorted(warnings)),
     )
     request_sha256 = sha256_bytes(canonical_json_bytes(request.to_dict()))
@@ -1146,6 +1218,7 @@ def verify_model_draft(
         communication_terminal_state=terminal_state,
         draft_sha256=draft_sha256,
         exclusions=artifact.exclusions,
+        invalid_model_output=None,
         model_identity=draft.model_identity,
         prompt_identity=draft.prompt_identity,
         request_id=request.request_id,
@@ -1162,6 +1235,89 @@ def verify_model_draft(
     return artifact, receipt
 
 
+def _close_invalid_model_output(
+    request: CommunicationRequest,
+    model_identity: ModelIdentity,
+    invalid_output: InvalidModelOutput,
+) -> tuple[VerifiedCommunicationArtifact, CommunicationReceipt]:
+    facts = tuple(item for item in request.plan if item.kind == "fact")
+    caveats = tuple(item for item in request.plan if item.kind == "caveat")
+    fact_coverage = Coverage(len(facts), 0, 0.0)
+    caveat_coverage = Coverage(len(caveats), 0, 0.0)
+    refusal_reason = f"invalid_model_output:{invalid_output.error_code}"
+    warnings = tuple(sorted((*request.warnings, f"refused:{refusal_reason}")))
+    artifact = VerifiedCommunicationArtifact(
+        emitted_caveat_coverage=caveat_coverage,
+        emitted_fact_coverage=fact_coverage,
+        exclusions=(),
+        invalid_model_output=invalid_output,
+        prose="",
+        refusal_reasons=(refusal_reason,),
+        request_id=request.request_id,
+        schema_version=ARTIFACT_SCHEMA,
+        sentences=(),
+        source_atlas_sha256=request.source_atlas_sha256,
+        source_card_sha256=request.source_card_sha256,
+        terminal_state="refused",
+        verified_claims=(),
+        verified_draft_caveat_coverage=caveat_coverage,
+        verified_draft_fact_coverage=fact_coverage,
+        warnings=warnings,
+    )
+    receipt = CommunicationReceipt(
+        artifact_sha256=sha256_bytes(canonical_json_bytes(artifact.to_dict())),
+        communication_terminal_state="refused",
+        draft_sha256=None,
+        exclusions=(),
+        invalid_model_output=invalid_output,
+        model_identity=model_identity,
+        prompt_identity=request.prompt_identity,
+        request_id=request.request_id,
+        request_sha256=sha256_bytes(canonical_json_bytes(request.to_dict())),
+        required_evidence_ids=request.required_evidence_ids,
+        schema_version=RECEIPT_SCHEMA,
+        source_atlas_sha256=request.source_atlas_sha256,
+        source_card_sha256=request.source_card_sha256,
+        terminal_state="closed",
+        transformation_id=request.transformation_id,
+        verifier_version=request.verifier_version,
+        warnings=warnings,
+    )
+    return artifact, receipt
+
+
+def semantic_artifact_projection(
+    artifact: VerifiedCommunicationArtifact,
+) -> dict[str, Any]:
+    """Return the normalized communication meaning without draft-local identity."""
+    normalized_claims = sorted(
+        (item.semantic_dict() for item in artifact.verified_claims),
+        key=canonical_json_bytes,
+    )
+    return {
+        "emitted_caveat_coverage": artifact.emitted_caveat_coverage.to_dict(),
+        "emitted_fact_coverage": artifact.emitted_fact_coverage.to_dict(),
+        "exclusion_reasons": sorted(item.reason for item in artifact.exclusions),
+        "invalid_model_output_error": (
+            artifact.invalid_model_output.error_code
+            if artifact.invalid_model_output is not None
+            else None
+        ),
+        "prose": artifact.prose,
+        "refusal_reasons": list(artifact.refusal_reasons),
+        "terminal_state": artifact.terminal_state,
+        "verified_claims": normalized_claims,
+        "verified_draft_caveat_coverage": (artifact.verified_draft_caveat_coverage.to_dict()),
+        "verified_draft_fact_coverage": (artifact.verified_draft_fact_coverage.to_dict()),
+    }
+
+
+def semantic_artifact_sha256(
+    artifact: VerifiedCommunicationArtifact,
+) -> str:
+    return sha256_bytes(canonical_json_bytes(semantic_artifact_projection(artifact)))
+
+
 def _publish_communication(
     output: Path,
     request: CommunicationRequest,
@@ -1169,6 +1325,11 @@ def _publish_communication(
     artifact: VerifiedCommunicationArtifact,
     receipt: CommunicationReceipt,
 ) -> CommunicationBuildResult:
+    if receipt.draft_sha256 is None or receipt.invalid_model_output is not None:
+        raise EvidenceError(
+            "invalid_publish_receipt",
+            "published communication bundles require a parsed draft",
+        )
     if path_occupied(output):
         raise EvidenceError("output_exists", str(output))
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -1291,6 +1452,7 @@ class RecordedDraftRunner:
         return RunnerResult(
             envelope=recorded_model_draft(request, atlas, profile, repeat_index),
             input_tokens=None,
+            invalid_model_output=None,
             latency_ms=None,
             output_tokens=None,
             peak_memory_mb=None,
@@ -1403,38 +1565,59 @@ class OllamaRunner:
         except (TimeoutError, urllib.error.URLError) as exc:
             raise EvidenceError("local_model_request_failed", str(exc)) from exc
         latency_ms = (time.perf_counter() - started) * 1000.0
-        response_value = require_object(
-            load_json_bytes(response_body, require_canonical=False),
-            "Ollama response",
-        )
-        response_text = require_string(response_value.get("response"), "response")
-        envelope = ModelDraftEnvelope.from_dict(
-            require_object(
-                load_json_bytes(response_text.encode("utf-8"), require_canonical=False),
-                "model draft",
+        try:
+            response_value = require_object(
+                load_json_bytes(response_body, require_canonical=False),
+                "Ollama response",
             )
-        )
+            response_text = require_string(response_value.get("response"), "response")
+        except EvidenceError as exc:
+            raise EvidenceError("local_model_protocol_failed", exc.code) from exc
         input_tokens = response_value.get("prompt_eval_count")
         output_tokens = response_value.get("eval_count")
         peak_memory = response_value.get("peak_memory_mb")
         peak_metal = response_value.get("peak_metal_memory_mb")
-        return RunnerResult(
-            envelope=envelope,
-            input_tokens=(
+        try:
+            parsed_input_tokens = (
                 require_int(input_tokens, "prompt_eval_count") if input_tokens is not None else None
-            ),
-            latency_ms=latency_ms,
-            output_tokens=(
+            )
+            parsed_output_tokens = (
                 require_int(output_tokens, "eval_count") if output_tokens is not None else None
-            ),
-            peak_memory_mb=(
+            )
+            parsed_peak_memory = (
                 require_number(peak_memory, "peak_memory_mb") if peak_memory is not None else None
-            ),
-            peak_metal_memory_mb=(
+            )
+            parsed_peak_metal = (
                 require_number(peak_metal, "peak_metal_memory_mb")
                 if peak_metal is not None
                 else None
-            ),
+            )
+        except EvidenceError as exc:
+            raise EvidenceError("local_model_protocol_failed", exc.code) from exc
+        model_output = response_text.encode("utf-8")
+        try:
+            envelope = ModelDraftEnvelope.from_dict(
+                require_object(
+                    load_json_bytes(model_output, require_canonical=False),
+                    "model draft",
+                )
+            )
+            invalid_output = None
+        except EvidenceError as exc:
+            envelope = None
+            invalid_output = InvalidModelOutput(
+                error_code=exc.code,
+                output_sha256=sha256_bytes(model_output),
+                output_size_bytes=len(model_output),
+            )
+        return RunnerResult(
+            envelope=envelope,
+            input_tokens=parsed_input_tokens,
+            invalid_model_output=invalid_output,
+            latency_ms=latency_ms,
+            output_tokens=parsed_output_tokens,
+            peak_memory_mb=parsed_peak_memory,
+            peak_metal_memory_mb=parsed_peak_metal,
         )
 
 
@@ -1582,11 +1765,16 @@ def run_benchmark(
     atlas, atlas_sha256 = _load_atlas(atlas_path)
     cases = _load_benchmark_cases(fixture_path)
     run_records: list[dict[str, Any]] = []
-    fact_numerator = 0
-    fact_denominator = 0
-    caveat_numerator = 0
-    caveat_denominator = 0
+    emitted_fact_numerator = 0
+    emitted_fact_denominator = 0
+    emitted_caveat_numerator = 0
+    emitted_caveat_denominator = 0
+    verified_draft_fact_numerator = 0
+    verified_draft_fact_denominator = 0
+    verified_draft_caveat_numerator = 0
+    verified_draft_caveat_denominator = 0
     excluded_claims = 0
+    invalid_model_outputs = 0
     proposed_claims = 0
     valid_citations = 0
     total_citations = 0
@@ -1608,32 +1796,59 @@ def run_benchmark(
         )
         for repeat_index in range(case.repeats):
             result = runner.run(request, atlas, case.profile, repeat_index)
-            if result.envelope.model_identity != runner.identity:
-                raise EvidenceError("runner_model_identity_mismatch", case.case_id)
-            artifact, communication_receipt = verify_model_draft(request, atlas, result.envelope)
+            if result.envelope is not None:
+                if result.envelope.model_identity != runner.identity:
+                    raise EvidenceError("runner_model_identity_mismatch", case.case_id)
+                artifact, communication_receipt = verify_model_draft(
+                    request, atlas, result.envelope
+                )
+                draft_sha256: str | None = sha256_bytes(
+                    canonical_json_bytes(result.envelope.to_dict())
+                )
+                proposed_claim_count = len(result.envelope.claims)
+                excluded_claim_count = len(artifact.exclusions)
+                valid, total = _citation_counts(request, atlas, result.envelope)
+                invalid_model_output_value: dict[str, Any] | None = None
+            else:
+                if result.invalid_model_output is None:
+                    raise EvidenceError("invalid_runner_result", case.case_id)
+                artifact, communication_receipt = _close_invalid_model_output(
+                    request, runner.identity, result.invalid_model_output
+                )
+                draft_sha256 = None
+                proposed_claim_count = 0
+                excluded_claim_count = 0
+                valid, total = 0, 0
+                invalid_model_outputs += 1
+                invalid_model_output_value = result.invalid_model_output.to_dict()
             if (
                 runner.identity.adapter == "recorded-fixture"
                 and artifact.terminal_state != case.expected_terminal_state
             ):
                 raise EvidenceError("recorded_fixture_outcome_mismatch", case.case_id)
-            draft_sha256 = sha256_bytes(canonical_json_bytes(result.envelope.to_dict()))
             artifact_sha256 = sha256_bytes(canonical_json_bytes(artifact.to_dict()))
             receipt_sha256 = sha256_bytes(canonical_json_bytes(communication_receipt.to_dict()))
+            semantic_sha256 = semantic_artifact_sha256(artifact)
             if runner.identity.adapter == "recorded-fixture":
+                if draft_sha256 is None:
+                    raise EvidenceError("recorded_fixture_invalid_output", case.case_id)
                 expected_run = case.expected_runs[repeat_index]
                 if (
                     draft_sha256 != expected_run.draft_sha256
                     or artifact_sha256 != expected_run.artifact_sha256
                 ):
                     raise EvidenceError("recorded_fixture_digest_mismatch", case.case_id)
-            semantic_by_case.setdefault(case.case_id, []).append(artifact_sha256)
-            proposed_claims += len(result.envelope.claims)
-            excluded_claims += len(artifact.exclusions)
-            fact_numerator += artifact.fact_coverage.numerator
-            fact_denominator += artifact.fact_coverage.denominator
-            caveat_numerator += artifact.caveat_coverage.numerator
-            caveat_denominator += artifact.caveat_coverage.denominator
-            valid, total = _citation_counts(request, atlas, result.envelope)
+            semantic_by_case.setdefault(case.case_id, []).append(semantic_sha256)
+            proposed_claims += proposed_claim_count
+            excluded_claims += excluded_claim_count
+            emitted_fact_numerator += artifact.emitted_fact_coverage.numerator
+            emitted_fact_denominator += artifact.emitted_fact_coverage.denominator
+            emitted_caveat_numerator += artifact.emitted_caveat_coverage.numerator
+            emitted_caveat_denominator += artifact.emitted_caveat_coverage.denominator
+            verified_draft_fact_numerator += artifact.verified_draft_fact_coverage.numerator
+            verified_draft_fact_denominator += artifact.verified_draft_fact_coverage.denominator
+            verified_draft_caveat_numerator += artifact.verified_draft_caveat_coverage.numerator
+            verified_draft_caveat_denominator += artifact.verified_draft_caveat_coverage.denominator
             valid_citations += valid
             total_citations += total
             if artifact.terminal_state == "refused":
@@ -1654,18 +1869,26 @@ def run_benchmark(
                 {
                     "artifact_sha256": artifact_sha256,
                     "case_id": case.case_id,
-                    "caveat_coverage": artifact.caveat_coverage.to_dict(),
+                    "citation_count": total,
                     "draft_sha256": draft_sha256,
-                    "exclusion_count": len(artifact.exclusions),
-                    "fact_coverage": artifact.fact_coverage.to_dict(),
-                    "model_identity": result.envelope.model_identity.to_dict(),
-                    "proposed_claim_count": len(result.envelope.claims),
+                    "emitted_caveat_coverage": (artifact.emitted_caveat_coverage.to_dict()),
+                    "emitted_fact_coverage": (artifact.emitted_fact_coverage.to_dict()),
+                    "exclusion_count": excluded_claim_count,
+                    "invalid_model_output": invalid_model_output_value,
+                    "model_identity": runner.identity.to_dict(),
+                    "proposed_claim_count": proposed_claim_count,
                     "receipt_sha256": receipt_sha256,
                     "refusal_reasons": list(artifact.refusal_reasons),
                     "repeat_index": repeat_index,
+                    "semantic_sha256": semantic_sha256,
                     "terminal_state": artifact.terminal_state,
                     "valid_citation_count": valid,
-                    "citation_count": total,
+                    "verified_draft_caveat_coverage": (
+                        artifact.verified_draft_caveat_coverage.to_dict()
+                    ),
+                    "verified_draft_fact_coverage": (
+                        artifact.verified_draft_fact_coverage.to_dict()
+                    ),
                 }
             )
     pair_count = 0
@@ -1675,16 +1898,25 @@ def run_benchmark(
             pair_count += 1
             mismatch_count += left != right
     metrics = {
+        "emitted_caveat_coverage": _fraction(emitted_caveat_numerator, emitted_caveat_denominator),
+        "emitted_fact_coverage": _fraction(emitted_fact_numerator, emitted_fact_denominator),
         "evidence_citation_validity": _fraction(valid_citations, total_citations),
         "input_tokens": _measurement(input_tokens, "runner_did_not_report_input_tokens"),
+        "invalid_model_output_rate": _fraction(invalid_model_outputs, len(run_records)),
         "latency_ms": _measurement(latencies, "recorded_replay_does_not_measure_latency"),
         "output_tokens": _measurement(output_tokens, "runner_did_not_report_output_tokens"),
         "peak_memory_mb": _measurement(peak_memory, "runner_did_not_report_peak_memory"),
         "peak_metal_memory_mb": _measurement(peak_metal, "runner_did_not_report_peak_metal_memory"),
         "replay_semantic_variance": _fraction(mismatch_count, pair_count),
-        "required_caveat_retention": _fraction(caveat_numerator, caveat_denominator),
-        "required_fact_coverage": _fraction(fact_numerator, fact_denominator),
         "unsupported_claim_rate": _fraction(excluded_claims, proposed_claims),
+        "verified_draft_caveat_retention": _fraction(
+            verified_draft_caveat_numerator,
+            verified_draft_caveat_denominator,
+        ),
+        "verified_draft_fact_coverage": _fraction(
+            verified_draft_fact_numerator,
+            verified_draft_fact_denominator,
+        ),
         "verifier_counts": {
             "accepted_or_partially_excluded": accepted_count,
             "refused": refusal_count,
