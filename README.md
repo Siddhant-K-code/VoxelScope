@@ -23,6 +23,7 @@ The project is still **NO-GO** for private model qualification and real-data inf
 The current package provides:
 
 - Strict canonical JSON and raw-array content hashes.
+- Deterministic synthetic glioblastoma protein evidence cards with replay receipts.
 - Typed study, volume, model, window, timing, output, drift, receipt, and refusal records.
 - Deterministic sliding-window enumeration in `(Z, Y, X)` order.
 - Explicit high-side zero padding for volumes smaller than the ROI.
@@ -61,6 +62,8 @@ src/voxelscope/
   drift.py       Nested-region validation and boundary-drift metrics
   bundle.py      Closed bundle indexing and semantic verification
   fixtures.py    Deterministic synthetic evidence generation
+  gbm_atlas.py   Synthetic protein evidence cards and replay receipts
+  gbm_atlas_cli.py  Separate offline synthetic atlas command-line interface
   custody_records.py  Versioned source and acquisition records
   real_data_contract.py  Trusted milestone 2 source and plan pins
   one_volume_records.py  Typed milestone 3 source-decision evidence
@@ -111,6 +114,9 @@ The CLI commands are:
 
 ```bash
 voxelscope fixture build --output build/evidence
+python -m voxelscope.gbm_atlas_cli build \
+  --manifest research/gbm-evidence-atlas-v1/source-manifest.json \
+  --output build/gbm-atlas
 voxelscope windows build --manifest build/evidence/study-manifest.json --output build/windows
 voxelscope verify --bundle build/evidence
 voxelscope drift compare \
@@ -152,6 +158,27 @@ All custody commands are offline unless `custody acquire` receives `--allow-netw
 A generated bundle contains synthetic modalities, volume and model identities, a deterministic window ledger, output identities, scenario drift reports, explicit refusal records, unavailable timing records with hash-bound provenance, a run receipt, and a readable summary. Every output identity binds the exact volume identity, model identity, window ledger, run, and arm. `bundle.json` indexes every payload file. `bundle.sha256` binds that index. The study manifest records the expected output IDs, report comparisons, and refusal IDs, while the verifier independently pins the complete PR 1 plan and required artifact paths in trusted code. Verification rejects missing, extra, changed, noncanonical, path-traversing, or symlinked evidence.
 
 Same-runtime deterministic repeats are expected to have byte-identical canonical probability and mask hashes. Cross-runtime outputs may differ, so VoxelScope records exact probability changes, threshold flips, mask changes, region Dice, volume change, component changes, and physical boundary distances. PR 1 sets no acceptance threshold for real segmentation drift.
+
+## Synthetic glioblastoma evidence atlas
+
+The bundled atlas fixture is synthetic and contains no imaging or individual-level records. The command validates a versioned source manifest, normalizes gene and protein identifiers with source-bound provenance, and writes canonical `atlas.json` and `receipt.json` files. Cards expose agreement, disagreement, missing modalities, unsupported joins, and source freshness. They do not rank proteins.
+
+The implementation fits the existing [architecture](#architecture) and canonical evidence model. Repeating the command with unchanged inputs produces byte-identical output.
+
+```bash
+uv run python -m voxelscope.gbm_atlas_cli build \
+  --manifest research/gbm-evidence-atlas-v1/source-manifest.json \
+  --output build/gbm-atlas
+```
+
+Sample command output:
+
+```text
+gbm_atlas_status=built atlas_sha256=5a9f1a2078d951b3f10ff909b5c341e4071b5ed92050283c31859521b8c88647 receipt_sha256=abd5bb0407ff5df345489b110a87be8e0c83cc2aeb3a21853f355eed4ee69ae0
+synthetic_only=true ranking_performed=false
+```
+
+The receipt records every source digest, `voxelscope/gbm-evidence-transform/v1`, exclusions, warnings, and the canonical atlas digest. Ambiguous identifier mappings stop the build. Unmapped identifiers remain explicit exclusions.
 
 ## Data lineage rule
 
