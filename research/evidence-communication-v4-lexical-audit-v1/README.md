@@ -35,7 +35,8 @@ classifier:
 The canonical [`audit.json`](audit.json) stores no raw draft prose. Each of its 108
 entry records stores the draft-text SHA-256 and size, run/case/request/skeleton
 identity, source record digests, claim context, verifier label, matched terms,
-deterministic context features, category, and reason code.
+deterministic context features, category, and reason code. Its SHA-256 is
+`14b6cf1096139194521fd6ebfafd3d617f440d30155d905df013165837d72839`.
 
 ## Recomputed findings
 
