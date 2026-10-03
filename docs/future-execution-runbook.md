@@ -172,3 +172,12 @@ Real execution remains blocked on:
 - Runtime image, library, CUDA, driver, and backend identities.
 - Host selection, budget authorization, and independent protocol review.
 - An explicit operator start action.
+
+## Prospective v4 evidence-communication comparison
+
+The local-Qwen3 v4 comparison is separately frozen by
+[`docs/evidence-communication-v4-study.md`](evidence-communication-v4-study.md).
+Its declaration is prospective only; no `/api/generate` request has occurred.
+Independent review and merge are required before one later explicit, declaration-
+bound execution. It does not authorize biomedical data, clinical claims, model
+loading for the imaging workflow, cloud use, or spend.

@@ -6,8 +6,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .canonical import EvidenceError, canonical_json_bytes, require_sha256, sha256_bytes
-from .evidence_benchmark_records import BenchmarkFile, MeasurementValue, RunnerConfiguration
+from .canonical import (
+    EvidenceError,
+    canonical_json_bytes,
+    require_sha256,
+    safe_relative_path,
+    sha256_bytes,
+)
+from .evidence_benchmark_records import MeasurementValue, RunnerConfiguration
 from .evidence_communication_records import (
     ARTIFACT_TERMINAL_STATES,
     CLAIM_TYPES,
@@ -38,6 +44,19 @@ BENCHMARK_INDEX_SCHEMA_V4 = "voxelscope/evidence-communication-benchmark-index/v
 BENCHMARK_RECEIPT_SCHEMA_V4 = "voxelscope/evidence-communication-benchmark-receipt/v4"
 RUNNER_MEASUREMENT_SCHEMA_V4 = "voxelscope/evidence-communication-runner-measurement/v4"
 INVALID_OUTPUT_RECORD_SCHEMA_V4 = "voxelscope/evidence-communication-invalid-output/v4"
+_BENCHMARK_ARTIFACT_TYPES_V4 = frozenset(
+    {
+        "benchmark_index",
+        "benchmark_report",
+        "communication_receipt",
+        "communication_request",
+        "invalid_model_output",
+        "model_draft",
+        "runner_measurement",
+        "study_declaration_binding",
+        "verified_artifact",
+    }
+)
 
 
 def _optional_string(value: Any, name: str) -> str | None:
@@ -65,6 +84,35 @@ def _strings(value: Any, name: str) -> tuple[str, ...]:
 def _unique(values: tuple[str, ...], name: str) -> None:
     if len(values) != len(set(values)):
         raise EvidenceError("duplicate_record_value", f"{name} must be unique")
+
+
+@dataclass(frozen=True)
+class BenchmarkFileV4:
+    artifact_type: str
+    path: str
+    sha256: str
+
+    def __post_init__(self) -> None:
+        if self.artifact_type not in _BENCHMARK_ARTIFACT_TYPES_V4:
+            raise EvidenceError("invalid_benchmark_artifact_type", self.artifact_type)
+        safe_relative_path(self.path)
+        require_sha256(self.sha256, "benchmark file sha256")
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> BenchmarkFileV4:
+        value = strict_fields(data, {"artifact_type", "path", "sha256"}, "BenchmarkFileV4")
+        return cls(
+            require_string(value["artifact_type"], "artifact_type"),
+            require_string(value["path"], "path"),
+            require_string(value["sha256"], "sha256"),
+        )
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "artifact_type": self.artifact_type,
+            "path": self.path,
+            "sha256": self.sha256,
+        }
 
 
 @dataclass(frozen=True)
@@ -1039,7 +1087,7 @@ class InvalidOutputRecordV4:
 class BenchmarkRunIndexV4:
     artifact_types: tuple[str, ...]
     case_id: str
-    files: tuple[BenchmarkFile, ...]
+    files: tuple[BenchmarkFileV4, ...]
     model_identity: ModelIdentity
     repeat_index: int
     run_path: str
@@ -1076,7 +1124,7 @@ class BenchmarkRunIndexV4:
             _strings(value["artifact_types"], "artifact_types"),
             require_string(value["case_id"], "case_id"),
             tuple(
-                BenchmarkFile.from_dict(require_object(item, "benchmark file"))
+                BenchmarkFileV4.from_dict(require_object(item, "benchmark file"))
                 for item in require_list(value["files"], "files")
             ),
             ModelIdentity.from_dict(require_object(value["model_identity"], "model_identity")),
@@ -1168,7 +1216,7 @@ class BenchmarkIndexV4:
 class BenchmarkReceiptV4:
     atlas_sha256: str
     benchmark_sha256: str
-    closed_files: tuple[BenchmarkFile, ...]
+    closed_files: tuple[BenchmarkFileV4, ...]
     fixture_sha256: str
     index_sha256: str
     model_identity: ModelIdentity
@@ -1223,7 +1271,7 @@ class BenchmarkReceiptV4:
             require_string(value["atlas_sha256"], "atlas_sha256"),
             require_string(value["benchmark_sha256"], "benchmark_sha256"),
             tuple(
-                BenchmarkFile.from_dict(require_object(item, "closed file"))
+                BenchmarkFileV4.from_dict(require_object(item, "closed file"))
                 for item in require_list(value["closed_files"], "closed_files")
             ),
             require_string(value["fixture_sha256"], "fixture_sha256"),

@@ -29,6 +29,7 @@ from voxelscope.evidence_communication_v4 import (
     RunnerResultV4,
     _profile_prompt_identity_v4,
     _recorded_output,
+    _terminal_outcome_bucket_v4,
     compile_recorded_fixture_v4,
     derive_claim_skeletons,
     derive_communication_request_v4,
@@ -792,6 +793,21 @@ def test_recorded_compile_and_replay_are_byte_deterministic(tmp_path: Path) -> N
     assert replay_communication_v4(atlas_path, first) == first_result
 
 
+@pytest.mark.parametrize(
+    ("terminal_state", "bucket"),
+    [
+        ("accepted", "accepted"),
+        ("accepted_with_exclusions", "partially_excluded"),
+        ("refused", "refused"),
+    ],
+)
+def test_terminal_outcome_bucket_uses_exact_artifact_states(
+    terminal_state: str,
+    bucket: str,
+) -> None:
+    assert _terminal_outcome_bucket_v4(terminal_state) == bucket
+
+
 def test_recorded_benchmark_replay_and_exact_metrics(tmp_path: Path) -> None:
     atlas_path = _atlas_path(tmp_path)
     first = tmp_path / "first"
@@ -845,10 +861,30 @@ def test_recorded_benchmark_replay_and_exact_metrics(tmp_path: Path) -> None:
         "numerator": 4,
         "value": 4 / 18,
     }
+    assert metrics["accepted_terminal_outcome_rate"] == {
+        "availability": "available",
+        "denominator": 18,
+        "numerator": 10,
+        "value": 10 / 18,
+    }
+    assert metrics["partially_excluded_terminal_outcome_rate"] == {
+        "availability": "available",
+        "denominator": 18,
+        "numerator": 0,
+        "value": 0.0,
+    }
+    assert metrics["refused_terminal_outcome_rate"] == {
+        "availability": "available",
+        "denominator": 18,
+        "numerator": 8,
+        "value": 8 / 18,
+    }
     assert metrics["evidence_citation_validity"]["value"] == 1.0
     assert metrics["replay_semantic_variance"]["value"] == 0.0
     assert metrics["verifier_counts"] == {
+        "accepted": 10,
         "accepted_or_partially_excluded": 10,
+        "partially_excluded": 0,
         "refused": 8,
         "total": 18,
     }

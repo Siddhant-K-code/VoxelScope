@@ -34,7 +34,6 @@ from .canonical import (
     write_json,
 )
 from .evidence_benchmark_records import (
-    BenchmarkFile,
     DeclaredEnvironmentSetting,
     MeasurementValue,
     RunnerConfiguration,
@@ -64,6 +63,7 @@ from .evidence_communication_v4_records import (
     RUNNER_MEASUREMENT_SCHEMA_V4,
     TRANSFORMATION_ID_V4,
     VERIFIER_VERSION_V4,
+    BenchmarkFileV4,
     BenchmarkIndexV4,
     BenchmarkReceiptV4,
     BenchmarkRunIndexV4,
@@ -80,6 +80,21 @@ from .evidence_communication_v4_records import (
     VerifiedClaimV4,
     VerifiedCommunicationArtifactV4,
     VerifiedSentenceV4,
+)
+from .evidence_communication_v4_study_records import (
+    ATTEMPT_MARKER_PATH_V4,
+    BENCHMARK_OUTPUT_PATH_V4,
+    DECLARATION_PATH_V4,
+    DECLARATION_RECEIPT_PATH_V4,
+    MODEL_TAG,
+    STUDY_ATTEMPT_SCHEMA_V4,
+    STUDY_EXECUTION_BINDING_SCHEMA_V4,
+    STUDY_ID_V4,
+    ProspectiveStudyDeclarationV4,
+    StudyAttemptV4,
+    StudyExecutionBindingV4,
+    load_study_declaration_v4,
+    verify_study_declaration_receipt_v4,
 )
 from .records import (
     require_int,
@@ -1093,6 +1108,7 @@ class OllamaRunnerV4:
         timeout_seconds: float = 120.0,
         context_window: int | None = None,
         declared_environment: Mapping[str, str] | None = None,
+        study_declaration_sha256: str | None = None,
     ) -> None:
         parsed = urlparse(endpoint)
         if (
@@ -1127,9 +1143,17 @@ class OllamaRunnerV4:
             raise EvidenceError("invalid_timeout", str(timeout_seconds))
         if context_window is not None and context_window <= 0:
             raise EvidenceError("invalid_context_window", str(context_window))
+        if study_declaration_sha256 is not None:
+            require_sha256(study_declaration_sha256, "study_declaration_sha256")
+        if model == MODEL_TAG and study_declaration_sha256 is None:
+            raise EvidenceError(
+                "missing_study_declaration_binding",
+                "the prospectively frozen v4 model requires a declaration binding",
+            )
         self._endpoint = endpoint.rstrip("/")
         self._model = model
         self._timeout_seconds = timeout_seconds
+        self._study_declaration_sha256 = study_declaration_sha256
         self._identity = ModelIdentity(
             adapter="ollama",
             endpoint=self._endpoint,
@@ -1161,6 +1185,10 @@ class OllamaRunnerV4:
     @property
     def configuration(self) -> RunnerConfiguration:
         return self._configuration
+
+    @property
+    def study_declaration_sha256(self) -> str | None:
+        return self._study_declaration_sha256
 
     def _metadata(self, path: str, name: str) -> dict[str, Any]:
         request = urllib.request.Request(self._endpoint + path, method="GET")
@@ -1755,6 +1783,16 @@ def _measurement_summary_v4(
     }
 
 
+def _terminal_outcome_bucket_v4(terminal_state: str) -> str:
+    if terminal_state == "accepted":
+        return "accepted"
+    if terminal_state == "accepted_with_exclusions":
+        return "partially_excluded"
+    if terminal_state == "refused":
+        return "refused"
+    raise EvidenceError("invalid_terminal_state", terminal_state)
+
+
 def _benchmark_metrics_v4(
     runs: Sequence[_CompletedBenchmarkRunV4],
 ) -> dict[str, Any]:
@@ -1770,8 +1808,11 @@ def _benchmark_metrics_v4(
     citations = 0
     valid_citations = 0
     invalid_outputs = 0
-    accepted = 0
-    refused = 0
+    terminal_outcomes = {
+        "accepted": 0,
+        "partially_excluded": 0,
+        "refused": 0,
+    }
     task_expected = 0
     task_matched = 0
     task_returned = 0
@@ -1794,8 +1835,7 @@ def _benchmark_metrics_v4(
         citations += run_citations
         valid_citations += run_citations
         invalid_outputs += artifact.invalid_model_output is not None
-        accepted += artifact.terminal_state != "refused"
-        refused += artifact.terminal_state == "refused"
+        terminal_outcomes[_terminal_outcome_bucket_v4(artifact.terminal_state)] += 1
         task_expected += artifact.task_outcome.expected_count
         task_matched += artifact.task_outcome.matched_count
         task_returned += artifact.task_outcome.returned_count
@@ -1810,6 +1850,10 @@ def _benchmark_metrics_v4(
             pair_count += 1
             mismatch_count += left != right
     return {
+        "accepted_terminal_outcome_rate": _fraction_v4(
+            terminal_outcomes["accepted"],
+            len(runs),
+        ),
         "duplicate_task_rate": _fraction_v4(task_duplicate, task_returned),
         "emitted_caveat_coverage": _fraction_v4(
             emitted_caveat_numerator,
@@ -1846,6 +1890,14 @@ def _benchmark_metrics_v4(
             _available_measurements_v4(runs, "peak_metal_memory_mb"),
             "runner_did_not_report_peak_metal_memory",
         ),
+        "partially_excluded_terminal_outcome_rate": _fraction_v4(
+            terminal_outcomes["partially_excluded"],
+            len(runs),
+        ),
+        "refused_terminal_outcome_rate": _fraction_v4(
+            terminal_outcomes["refused"],
+            len(runs),
+        ),
         "replay_semantic_variance": _fraction_v4(mismatch_count, pair_count),
         "task_skeleton_coverage": _fraction_v4(task_matched, task_expected),
         "unknown_task_rate": _fraction_v4(task_unknown, task_returned),
@@ -1859,8 +1911,12 @@ def _benchmark_metrics_v4(
             draft_fact_denominator,
         ),
         "verifier_counts": {
-            "accepted_or_partially_excluded": accepted,
-            "refused": refused,
+            "accepted": terminal_outcomes["accepted"],
+            "accepted_or_partially_excluded": (
+                terminal_outcomes["accepted"] + terminal_outcomes["partially_excluded"]
+            ),
+            "partially_excluded": terminal_outcomes["partially_excluded"],
+            "refused": terminal_outcomes["refused"],
             "total": len(runs),
         },
     }
@@ -1898,7 +1954,7 @@ def _build_benchmark_index_v4(
     indexed_runs: list[BenchmarkRunIndexV4] = []
     for run in sorted(runs, key=lambda item: (item.case_id, item.repeat_index)):
         files = tuple(
-            BenchmarkFile(
+            BenchmarkFileV4(
                 artifact_type,
                 f"{run.run_path}/{filename}",
                 sha256_bytes(canonical_json_bytes(value)),
@@ -2024,17 +2080,206 @@ def _complete_benchmark_run_v4(
     )
 
 
+def _validate_study_execution_v4(
+    atlas_sha256: str,
+    fixture_sha256: str,
+    output: Path,
+    runner: ModelRunnerV4,
+    declaration: ProspectiveStudyDeclarationV4,
+    declaration_sha256: str,
+    repository_root: Path,
+) -> StudyExecutionBindingV4:
+    require_sha256(declaration_sha256, "declaration_sha256")
+    root = repository_root.resolve()
+    declaration_path = root / DECLARATION_PATH_V4
+    committed_declaration = load_study_declaration_v4(declaration_path, root)
+    receipt = verify_study_declaration_receipt_v4(
+        root / DECLARATION_RECEIPT_PATH_V4,
+        declaration_path,
+    )
+    if (
+        committed_declaration != declaration
+        or receipt.declaration_sha256 != declaration_sha256
+        or sha256_bytes(canonical_json_bytes(declaration.to_dict())) != declaration_sha256
+    ):
+        raise EvidenceError("study_declaration_digest_mismatch", STUDY_ID_V4)
+    if declaration.model_identity != runner.identity:
+        raise EvidenceError("study_model_identity_mismatch", STUDY_ID_V4)
+    if declaration.runner_configuration != runner.configuration:
+        raise EvidenceError("study_runner_configuration_mismatch", STUDY_ID_V4)
+    if atlas_sha256 != declaration.design["synthetic_atlas_sha256"]:
+        raise EvidenceError("source_atlas_digest_mismatch", str(atlas_sha256))
+    if fixture_sha256 != declaration.design["fixture_sha256"]:
+        raise EvidenceError("benchmark_fixture_digest_mismatch", str(fixture_sha256))
+    expected_output = root / BENCHMARK_OUTPUT_PATH_V4
+    if output.resolve() != expected_output.resolve():
+        raise EvidenceError("study_output_path_mismatch", str(output))
+    return StudyExecutionBindingV4(
+        declaration_sha256=declaration_sha256,
+        schema_version=STUDY_EXECUTION_BINDING_SCHEMA_V4,
+        study_id=STUDY_ID_V4,
+    )
+
+
+def _consume_study_attempt_v4(
+    repository_root: Path,
+    declaration_sha256: str,
+) -> None:
+    marker = repository_root / ATTEMPT_MARKER_PATH_V4
+    if path_occupied(marker):
+        raise EvidenceError("study_attempt_already_consumed", str(marker))
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    attempt = StudyAttemptV4(
+        benchmark_output_path=BENCHMARK_OUTPUT_PATH_V4,
+        declaration_sha256=declaration_sha256,
+        no_rerun=True,
+        schema_version=STUDY_ATTEMPT_SCHEMA_V4,
+        study_id=STUDY_ID_V4,
+        terminal_state="consumed_on_start",
+    )
+    try:
+        with marker.open("xb") as stream:
+            stream.write(canonical_json_bytes(attempt.to_dict()))
+            stream.flush()
+            os.fsync(stream.fileno())
+    except FileExistsError as exc:
+        raise EvidenceError("study_attempt_already_consumed", str(marker)) from exc
+
+
+def _validate_study_measurements_v4(benchmark: dict[str, Any]) -> None:
+    metrics = require_object(benchmark["metrics"], "benchmark metrics")
+    latency = require_object(metrics["latency_ms"], "latency_ms")
+    if latency.get("availability") != "available" or latency.get("count") != 18:
+        raise EvidenceError("study_measurement_policy_mismatch", "latency_ms")
+    for name in ("peak_memory_mb", "peak_metal_memory_mb"):
+        measurement = require_object(metrics[name], name)
+        if measurement.get("availability") != "unavailable":
+            raise EvidenceError("study_measurement_policy_mismatch", name)
+
+
+def preflight_study_v4(runner: OllamaRunnerV4) -> dict[str, Any]:
+    if runner.identity.model != MODEL_TAG or runner.study_declaration_sha256 is None:
+        raise EvidenceError("missing_study_declaration_binding", STUDY_ID_V4)
+    for _ in range(2):
+        runner.validate_identity()
+    return {
+        "checks": 2,
+        "endpoint_locality": "localhost_only",
+        "generation_requests": 0,
+        "metadata_requests": [
+            "GET /api/version",
+            "GET /api/tags",
+            "GET /api/version",
+            "GET /api/tags",
+        ],
+        "model": runner.identity.model,
+        "model_manifest_sha256": runner.identity.model_manifest_sha256,
+        "runtime": runner.identity.runtime,
+        "runtime_version": runner.identity.runtime_version,
+        "schema_version": "voxelscope/evidence-communication-local-model-preflight/v4",
+        "status": "verified",
+        "study_id": STUDY_ID_V4,
+    }
+
+
+def study_size_preflight_v4(
+    atlas_path: Path,
+    fixture_path: Path,
+    runner: OllamaRunnerV4,
+) -> dict[str, Any]:
+    if runner.identity.model != MODEL_TAG or runner.study_declaration_sha256 is None:
+        raise EvidenceError("missing_study_declaration_binding", STUDY_ID_V4)
+    atlas, atlas_sha256 = _load_atlas(atlas_path)
+    fixture_sha256 = sha256_file(fixture_path)
+    cases = _load_benchmark_cases_v4(fixture_path)
+    measurements: list[dict[str, Any]] = []
+    for case in cases:
+        request = derive_communication_request_v4(
+            atlas,
+            atlas_sha256,
+            case.protein_id,
+            f"benchmark-v4:{case.case_id}",
+            _profile_prompt_identity_v4(case.profile),
+        )
+        body = runner.request_body(request, case.profile)
+        prompt = require_string(body["prompt"], "prompt")
+        schema = require_object(body["format"], "format")
+        measurements.append(
+            {
+                "case_id": case.case_id,
+                "prompt_utf8_bytes": len(prompt.encode("utf-8")),
+                "request_body_canonical_json_bytes": len(canonical_json_bytes(body)),
+                "schema_canonical_json_bytes": len(canonical_json_bytes(schema)),
+                "skeleton_count": len(request.skeletons),
+            }
+        )
+    return {
+        "atlas_sha256": atlas_sha256,
+        "cases": measurements,
+        "fixture_sha256": fixture_sha256,
+        "generation_requests": 0,
+        "measurement_method": (
+            "len_utf8_for_prompt_and_len_voxelscope_canonical_json_bytes_for_"
+            "schema_and_complete_nonstreaming_request_body"
+        ),
+        "observed_inference_counters": "unavailable_no_generation",
+        "schema_version": "voxelscope/evidence-communication-local-model-size-preflight/v4",
+        "status": "measured_without_generation",
+        "token_estimation": (
+            "not_computed_prompt_utf8_bytes_are_recorded_as_deterministic_inputs_"
+            "but_are_not_token_counts"
+        ),
+    }
+
+
 def run_benchmark_v4(
     atlas_path: Path,
     fixture_path: Path,
     output: Path,
     runner: ModelRunnerV4,
+    *,
+    study_declaration: ProspectiveStudyDeclarationV4 | None = None,
+    study_declaration_sha256: str | None = None,
+    repository_root: Path | None = None,
 ) -> dict[str, Any]:
     if path_occupied(output):
         raise EvidenceError("output_exists", str(output))
+    runner_declaration_sha256 = getattr(runner, "study_declaration_sha256", None)
+    reserved_output_parts = Path(BENCHMARK_OUTPUT_PATH_V4).parts
+    resolved_output_parts = output.resolve().parts
+    if (
+        len(resolved_output_parts) >= len(reserved_output_parts)
+        and resolved_output_parts[-len(reserved_output_parts) :] == reserved_output_parts
+        and runner_declaration_sha256 is None
+    ):
+        raise EvidenceError(
+            "missing_study_declaration_binding",
+            "the reserved prospective-study output requires a declaration-bound runner",
+        )
     atlas, atlas_sha256 = _load_atlas(atlas_path)
     cases = _load_benchmark_cases_v4(fixture_path)
     fixture_sha256 = sha256_file(fixture_path)
+    study_binding: StudyExecutionBindingV4 | None = None
+    if runner_declaration_sha256 is not None:
+        if study_declaration is None or study_declaration_sha256 is None or repository_root is None:
+            raise EvidenceError(
+                "missing_study_declaration_binding",
+                "study declaration, digest, and repository root are required",
+            )
+        if runner_declaration_sha256 != study_declaration_sha256:
+            raise EvidenceError("study_declaration_digest_mismatch", STUDY_ID_V4)
+        study_binding = _validate_study_execution_v4(
+            atlas_sha256,
+            fixture_sha256,
+            output,
+            runner,
+            study_declaration,
+            study_declaration_sha256,
+            repository_root,
+        )
+        _consume_study_attempt_v4(repository_root, study_declaration_sha256)
+    elif study_declaration is not None or study_declaration_sha256 is not None:
+        raise EvidenceError("unexpected_study_declaration_binding", runner.identity.adapter)
     runner.validate_identity()
     completed_runs: list[_CompletedBenchmarkRunV4] = []
     for case in cases:
@@ -2065,6 +2310,8 @@ def run_benchmark_v4(
         runner.configuration,
         completed_runs,
     )
+    if study_binding is not None:
+        _validate_study_measurements_v4(benchmark)
     index = _build_benchmark_index_v4(
         atlas_sha256,
         fixture_sha256,
@@ -2075,9 +2322,17 @@ def run_benchmark_v4(
     benchmark_sha256 = sha256_bytes(canonical_json_bytes(benchmark))
     index_sha256 = sha256_bytes(canonical_json_bytes(index.to_dict()))
     closed_files = [
-        BenchmarkFile("benchmark_report", "benchmark.json", benchmark_sha256),
-        BenchmarkFile("benchmark_index", "index.json", index_sha256),
+        BenchmarkFileV4("benchmark_report", "benchmark.json", benchmark_sha256),
+        BenchmarkFileV4("benchmark_index", "index.json", index_sha256),
     ]
+    if study_binding is not None:
+        closed_files.append(
+            BenchmarkFileV4(
+                "study_declaration_binding",
+                "study-binding.json",
+                sha256_bytes(canonical_json_bytes(study_binding.to_dict())),
+            )
+        )
     closed_files.extend(file for indexed_run in index.runs for file in indexed_run.files)
     receipt = BenchmarkReceiptV4(
         atlas_sha256=atlas_sha256,
@@ -2100,8 +2355,15 @@ def run_benchmark_v4(
                 write_json(stage / run.run_path / filename, value)
         write_json(stage / "benchmark.json", benchmark)
         write_json(stage / "index.json", index.to_dict())
+        if study_binding is not None:
+            write_json(stage / "study-binding.json", study_binding.to_dict())
         write_json(stage / "receipt.json", receipt.to_dict())
-        replay_benchmark_v4(atlas_path, fixture_path, stage)
+        replay_benchmark_v4(
+            atlas_path,
+            fixture_path,
+            stage,
+            study_declaration_sha256=study_declaration_sha256,
+        )
         rename_no_replace(stage, output)
     finally:
         if stage.exists():
@@ -2113,6 +2375,8 @@ def replay_benchmark_v4(
     atlas_path: Path,
     fixture_path: Path,
     bundle: Path,
+    *,
+    study_declaration_sha256: str | None = None,
 ) -> dict[str, Any]:
     actual_files, actual_directories = _actual_benchmark_entries_v4(bundle)
     if "receipt.json" not in actual_files:
@@ -2120,6 +2384,21 @@ def replay_benchmark_v4(
     receipt = BenchmarkReceiptV4.from_dict(
         require_object(load_json(bundle / "receipt.json"), "benchmark receipt")
     )
+    binding_paths = {
+        item.path
+        for item in receipt.closed_files
+        if item.artifact_type == "study_declaration_binding"
+    }
+    if binding_paths:
+        if binding_paths != {"study-binding.json"} or study_declaration_sha256 is None:
+            raise EvidenceError("missing_study_declaration_binding", str(bundle))
+        binding = StudyExecutionBindingV4.from_dict(
+            require_object(load_json(bundle / "study-binding.json"), "study binding")
+        )
+        if binding.declaration_sha256 != study_declaration_sha256:
+            raise EvidenceError("study_declaration_digest_mismatch", str(bundle))
+    elif study_declaration_sha256 is not None:
+        raise EvidenceError("unexpected_study_declaration_binding", str(bundle))
     expected_files = {item.path for item in receipt.closed_files} | {"receipt.json"}
     if actual_files != expected_files:
         raise EvidenceError(
@@ -2331,17 +2610,25 @@ def replay_benchmark_v4(
     if rebuilt_benchmark != stored_benchmark:
         raise EvidenceError("benchmark_replay_mismatch", str(bundle))
     expected_closed_files = [
-        BenchmarkFile(
+        BenchmarkFileV4(
             "benchmark_report",
             "benchmark.json",
             sha256_bytes(canonical_json_bytes(rebuilt_benchmark)),
         ),
-        BenchmarkFile(
+        BenchmarkFileV4(
             "benchmark_index",
             "index.json",
             sha256_bytes(canonical_json_bytes(rebuilt_index.to_dict())),
         ),
     ]
+    if binding_paths:
+        expected_closed_files.append(
+            BenchmarkFileV4(
+                "study_declaration_binding",
+                "study-binding.json",
+                sha256_bytes((bundle / "study-binding.json").read_bytes()),
+            )
+        )
     expected_closed_files.extend(
         file for indexed_run in rebuilt_index.runs for file in indexed_run.files
     )
