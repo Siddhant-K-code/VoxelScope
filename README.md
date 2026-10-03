@@ -247,6 +247,16 @@ See the
 for trust boundaries, exact commands, metric denominators, local-runner setup, and
 measurement limitations.
 
+The separate
+[v4 bounded drafting intervention](docs/evidence-communication-compiler-v4.md)
+derives stable, pre-grouped claim skeletons and limits model output to one skeleton
+ID plus untrusted draft text per task. Trusted code supplies all identities, typed
+fields, requirement bindings, citations, safety copy, verified claims, and canonical
+prose. Its frozen nine-case, two-repeat recorded benchmark is offline and synthetic.
+It is a prospective implementation, not an observed improvement; no real model was
+run or downloaded, and a new reviewed declaration is required before any comparison
+with the closed v1 study.
+
 The
 [first observed Qwen3 8B Q8_0 local-model study](research/gbm-evidence-communication-qwen3-8b-q8-study-v1/README.md)
 is a prospectively frozen, synthetic, non-clinical benchmark. It used no real
