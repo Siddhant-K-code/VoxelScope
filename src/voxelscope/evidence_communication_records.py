@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
 from .canonical import (
     EvidenceError,
@@ -22,12 +23,12 @@ from .records import (
     strict_fields,
 )
 
-REQUEST_SCHEMA = "voxelscope/evidence-communication-request/v2"
-DRAFT_SCHEMA = "voxelscope/evidence-communication-model-draft/v2"
-ARTIFACT_SCHEMA = "voxelscope/verified-evidence-communication/v2"
-RECEIPT_SCHEMA = "voxelscope/evidence-communication-receipt/v2"
-TRANSFORMATION_ID = "voxelscope/evidence-communication-compiler/v2"
-VERIFIER_VERSION = "voxelscope/evidence-communication-verifier/v2"
+REQUEST_SCHEMA = "voxelscope/evidence-communication-request/v3"
+DRAFT_SCHEMA = "voxelscope/evidence-communication-model-draft/v3"
+ARTIFACT_SCHEMA = "voxelscope/verified-evidence-communication/v3"
+RECEIPT_SCHEMA = "voxelscope/evidence-communication-receipt/v3"
+TRANSFORMATION_ID = "voxelscope/evidence-communication-compiler/v3"
+VERIFIER_VERSION = "voxelscope/evidence-communication-verifier/v3"
 
 CLAIM_TYPES = frozenset(
     {
@@ -89,20 +90,69 @@ class ModelIdentity:
     adapter: str
     endpoint: str | None
     model: str
+    model_manifest_sha256: str | None
     runtime: str
+    runtime_version: str
+
+    def __post_init__(self) -> None:
+        if self.model_manifest_sha256 is not None:
+            require_sha256(self.model_manifest_sha256, "model_manifest_sha256")
+        if self.adapter == "ollama":
+            if self.model_manifest_sha256 is None:
+                raise EvidenceError(
+                    "missing_model_manifest_digest",
+                    "Ollama identity requires a full model manifest SHA-256",
+                )
+            if self.endpoint is None:
+                raise EvidenceError(
+                    "missing_local_model_endpoint",
+                    "Ollama identity requires a localhost endpoint",
+                )
+            parsed = urlparse(self.endpoint)
+            if (
+                parsed.scheme != "http"
+                or parsed.hostname not in {"127.0.0.1", "::1", "localhost"}
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.path not in {"", "/"}
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise EvidenceError(
+                    "nonlocal_model_endpoint",
+                    "Ollama identity must use unauthenticated localhost HTTP",
+                )
+            if self.runtime != "ollama":
+                raise EvidenceError("invalid_model_runtime", self.runtime)
+        elif self.adapter == "recorded-fixture" and (
+            self.endpoint is not None or self.model_manifest_sha256 is not None
+        ):
+            raise EvidenceError(
+                "invalid_recorded_fixture_identity",
+                "recorded fixtures do not represent an Ollama installation",
+            )
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ModelIdentity:
         value = strict_fields(
             data,
-            {"adapter", "endpoint", "model", "runtime"},
+            {
+                "adapter",
+                "endpoint",
+                "model",
+                "model_manifest_sha256",
+                "runtime",
+                "runtime_version",
+            },
             "ModelIdentity",
         )
         return cls(
             require_string(value["adapter"], "adapter"),
             _optional_string(value["endpoint"], "endpoint"),
             require_string(value["model"], "model"),
+            _optional_string(value["model_manifest_sha256"], "model_manifest_sha256"),
             require_string(value["runtime"], "runtime"),
+            require_string(value["runtime_version"], "runtime_version"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -110,7 +160,9 @@ class ModelIdentity:
             "adapter": self.adapter,
             "endpoint": self.endpoint,
             "model": self.model,
+            "model_manifest_sha256": self.model_manifest_sha256,
             "runtime": self.runtime,
+            "runtime_version": self.runtime_version,
         }
 
 
