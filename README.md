@@ -71,6 +71,8 @@ src/voxelscope/
   evidence_benchmark_records.py  Strict benchmark index, runner, and custody schemas
   evidence_communication.py  Deterministic claim verifier, compiler, and benchmark
   evidence_communication_cli.py  Separate offline communication command-line interface
+  evidence_communication_v4_audit.py  Reproducible post-hoc v4 lexical audit
+  evidence_communication_v4_audit_cli.py  Offline audit recomputation and verification
   custody_records.py  Versioned source and acquisition records
   real_data_contract.py  Trusted milestone 2 source and plan pins
   one_volume_records.py  Typed milestone 3 source-decision evidence
@@ -259,6 +261,28 @@ was later executed from its merged prospective declaration exactly once, with no
 model download or retry. Its bounded results do not establish model improvement,
 safety, causality, generalization, significance, superiority, clinical utility,
 production readiness, or biomedical validity.
+
+The standalone
+[observed v4 lexical audit](research/evidence-communication-v4-lexical-audit-v1/README.md)
+first verifies and replays the immutable observed v4 custody tree, then mechanically
+classifies all 108 lexical exclusions without another model. It records only
+digest-bound text identities and transparent context features: 12 explicit
+negation/disclaimer entries, 4 affirmative clinical-process statements, and 92
+ambiguous/context-dependent entries. These are post-hoc labels, not substantive
+unsafe-text, clinical, biomedical, or model-quality conclusions.
+
+The prospective
+[v5 deterministic discourse-planner contract](docs/evidence-communication-v5-discourse-planner-contract.md)
+removes free-form model prose from the future interface. A local model may propose
+only enumerated ordering, optional-unit, and caveat-placement decisions over
+code-owned unit IDs; the caller freezes the audience profile for both planners. A
+first-class no-model baseline exactly optimizes the complete finite feasible plan
+set with frozen lexicographic objectives and the same request, verifier, renderer,
+and budgets. Those objectives leave no model-eligible value endpoint, so the
+contract requires deterministic v5 first and stops before inference unless a
+separately reviewed prospective objective establishes eligibility. This milestone
+is a design contract only: it implements no v5 compiler, declares no execution,
+and presents no v5 fixture as model evidence.
 
 The
 [first observed Qwen3 8B Q8_0 local-model study](research/gbm-evidence-communication-qwen3-8b-q8-study-v1/README.md)
