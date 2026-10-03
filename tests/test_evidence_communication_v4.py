@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import copy
 import dataclasses
+import json
 import urllib.error
 import urllib.request
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +58,8 @@ V3_OBSERVED_BUNDLE = ROOT / "research/gbm-evidence-communication-qwen3-8b-q8-stu
 V4_BENCHMARK_FIXTURE = (
     ROOT / "research/gbm-evidence-communication-benchmark-v4/benchmark-fixtures.json"
 )
+V4_OBSERVED_STUDY = ROOT / "research/gbm-evidence-communication-qwen3-8b-q8-study-v4"
+V4_OBSERVED_BUNDLE = V4_OBSERVED_STUDY / "benchmark"
 OLLAMA_DIGEST = "a" * 64
 OLLAMA_VERSION = "0.35.1"
 
@@ -997,3 +1001,130 @@ def test_v3_observed_bundle_remains_replayable_byte_for_byte(tmp_path: Path) -> 
         "total": 18,
     }
     assert _tree_bytes(V3_OBSERVED_BUNDLE) == before
+
+
+def test_v4_observed_bundle_remains_replayable_byte_for_byte(tmp_path: Path) -> None:
+    atlas_path = _atlas_path(tmp_path)
+    before = _tree_bytes(V4_OBSERVED_BUNDLE)
+    study_binding = load_json(V4_OBSERVED_BUNDLE / "study-binding.json")
+
+    benchmark = replay_benchmark_v4(
+        atlas_path,
+        V4_BENCHMARK_FIXTURE,
+        V4_OBSERVED_BUNDLE,
+        study_declaration_sha256=study_binding["declaration_sha256"],
+    )
+
+    assert len(before) == 94
+    assert benchmark["schema_version"] == "voxelscope/evidence-communication-benchmark/v4"
+    assert benchmark["metrics"]["verifier_counts"] == {
+        "accepted": 6,
+        "accepted_or_partially_excluded": 6,
+        "partially_excluded": 0,
+        "refused": 12,
+        "total": 18,
+    }
+    assert _tree_bytes(V4_OBSERVED_BUNDLE) == before
+
+
+def test_v4_post_hoc_analysis_recomputes_from_safe_artifacts() -> None:
+    analysis = json.loads((V4_OBSERVED_STUDY / "post-hoc-analysis.json").read_text())
+    result_summary = json.loads((V4_OBSERVED_STUDY / "result-summary.json").read_text())
+    benchmark = load_json(V4_OBSERVED_BUNDLE / "benchmark.json")
+
+    assert "analysis_performed_at" not in analysis
+    assert analysis["observed_result_recorded_at"] == result_summary["result_recorded_at"]
+    assert analysis["analysis_status"] == "post_observation_not_preregistered"
+    assert analysis["analysis_boundary"]["model_owned_draft_text_accessed"] is False
+    assert analysis["analysis_boundary"]["model_owned_draft_text_published"] is False
+    assert "model_draft" not in analysis["analysis_boundary"]["used_artifact_types"]
+
+    reason_counts: Counter[str] = Counter()
+    claim_type_counts: Counter[str] = Counter()
+    requirement_kind_counts: Counter[str] = Counter()
+    terminal_counts: Counter[str] = Counter()
+    unique_excluded_skeleton_ids: set[str] = set()
+    excluded_sets_by_case: dict[str, list[set[str]]] = {}
+    task_counts: Counter[str] = Counter()
+    run_count_with_exclusions = 0
+    invalid_model_outputs = 0
+
+    for run in benchmark["runs"]:
+        run_root = V4_OBSERVED_BUNDLE / run["run_path"]
+        artifact = load_json(run_root / "artifact.json")
+        request = load_json(run_root / "request.json")
+        skeletons = {item["skeleton_id"]: item for item in request["skeletons"]}
+        requirement_kinds = {item["requirement_id"]: item["kind"] for item in request["plan"]}
+        excluded_skeleton_ids: set[str] = set()
+
+        if artifact["exclusions"]:
+            run_count_with_exclusions += 1
+        for exclusion in artifact["exclusions"]:
+            skeleton_id = exclusion["skeleton_id"]
+            skeleton = skeletons[skeleton_id]
+            excluded_skeleton_ids.add(skeleton_id)
+            unique_excluded_skeleton_ids.add(skeleton_id)
+            reason_counts[exclusion["reason"]] += 1
+            claim_type_counts[skeleton["claim_type"]] += 1
+            for requirement_id in skeleton["requirement_ids"]:
+                requirement_kind_counts[requirement_kinds[requirement_id]] += 1
+
+        excluded_sets_by_case.setdefault(run["case_id"], []).append(excluded_skeleton_ids)
+        terminal_bucket = {
+            "accepted": "accepted",
+            "accepted_with_exclusions": "partially_excluded",
+            "refused": "refused",
+        }[artifact["terminal_state"]]
+        terminal_counts[terminal_bucket] += 1
+        invalid_model_outputs += int(artifact["invalid_model_output"] is not None)
+        for field in (
+            "expected_count",
+            "matched_count",
+            "unknown_count",
+            "duplicate_count",
+            "omitted_count",
+        ):
+            task_counts[field] += artifact["task_outcome"][field]
+
+    expected_requirement_counts = {
+        "caveat": requirement_kind_counts["caveat"],
+        "fact": requirement_kind_counts["fact"],
+        "total": requirement_kind_counts.total(),
+    }
+    expected_terminal_counts = {
+        "accepted": terminal_counts["accepted"],
+        "partially_excluded": terminal_counts["partially_excluded"],
+        "refused": terminal_counts["refused"],
+        "total": terminal_counts.total(),
+    }
+    expected_pair_differences = [
+        {
+            "case_id": case_id,
+            "symmetric_difference_count": len(repeats[0] ^ repeats[1]),
+        }
+        for case_id, repeats in sorted(excluded_sets_by_case.items())
+        if repeats[0] != repeats[1]
+    ]
+
+    assert analysis["exclusions"] == {
+        "excluded_claim_type_counts": dict(sorted(claim_type_counts.items())),
+        "excluded_requirement_binding_counts": expected_requirement_counts,
+        "reason_counts": dict(sorted(reason_counts.items())),
+        "run_count_with_exclusions": run_count_with_exclusions,
+        "total_excluded_skeleton_entries": reason_counts.total(),
+        "unique_excluded_skeleton_ids": len(unique_excluded_skeleton_ids),
+    }
+    assert analysis["repeat_pair_exclusion_set_differences"] == expected_pair_differences
+    assert analysis["task_set_observations"] == {
+        "duplicate_skeleton_entries": task_counts["duplicate_count"],
+        "expected_skeleton_entries": task_counts["expected_count"],
+        "invalid_model_outputs": invalid_model_outputs,
+        "matched_skeleton_entries": task_counts["matched_count"],
+        "omitted_skeleton_entries": task_counts["omitted_count"],
+        "unknown_skeleton_entries": task_counts["unknown_count"],
+    }
+    assert analysis["terminal_counts"] == expected_terminal_counts
+    for field in ("benchmark_index", "benchmark_receipt", "benchmark_report"):
+        evidence = analysis["closed_evidence"][field]
+        evidence_sha256 = sha256_bytes((V4_OBSERVED_STUDY / evidence["path"]).read_bytes())
+        assert evidence_sha256 == evidence["sha256"]

@@ -4,6 +4,9 @@
 
 This analysis was created only after the unchanged observed result was frozen in
 commit `4cc05da4fee06113fd2288b20b677aa43df2d637`.
+The machine-readable `observed_result_recorded_at` value is the frozen result
+timestamp, not an analysis timestamp; commit ordering establishes the post-hoc
+sequence.
 
 It uses only `benchmark.json`, verified `artifact.json` records, closed
 `request.json` skeleton metadata, the index, and the receipt. It does not read,

@@ -13,7 +13,6 @@
       "verified_artifact"
     ]
   },
-  "analysis_performed_at": "2026-10-03T15:50:34Z",
   "analysis_status": "post_observation_not_preregistered",
   "closed_evidence": {
     "benchmark_index": {
@@ -64,6 +63,7 @@
     "possible_text_level_causes_distinguished": false,
     "reason": "verified artifacts retain exclusion categories and skeleton identities but this analysis did not inspect model-owned draft text"
   },
+  "observed_result_recorded_at": "2026-10-03T15:50:34Z",
   "repeat_pair_exclusion_set_differences": [
     {
       "case_id": "cross-layer-disagreement",
