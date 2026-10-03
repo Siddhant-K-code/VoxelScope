@@ -4,11 +4,13 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from voxelscope import evidence_communication_v4 as v4_module
 from voxelscope.canonical import (
     EvidenceError,
     canonical_json_bytes,
@@ -19,10 +21,12 @@ from voxelscope.canonical import (
 )
 from voxelscope.evidence_communication_v4 import (
     OllamaRunnerV4,
+    RecordedDraftRunnerV4,
     preflight_study_v4,
     run_benchmark_v4,
     study_size_preflight_v4,
 )
+from voxelscope.evidence_communication_v4_cli import main as v4_cli_main
 from voxelscope.evidence_communication_v4_study_records import (
     ATTEMPT_MARKER_PATH_V4,
     BENCHMARK_OUTPUT_PATH_V4,
@@ -98,6 +102,53 @@ def _mutate(value: dict[str, Any], path: tuple[str | int, ...], replacement: Any
     target[path[-1]] = replacement
 
 
+def _mutation_paths(value: Any, prefix: tuple[str | int, ...] = ()) -> list[tuple[str | int, ...]]:
+    if isinstance(value, dict):
+        if not value:
+            return [prefix]
+        return [
+            path for key, item in value.items() for path in _mutation_paths(item, (*prefix, key))
+        ]
+    if isinstance(value, list):
+        if not value:
+            return [prefix]
+        return [
+            path
+            for index, item in enumerate(value)
+            for path in _mutation_paths(item, (*prefix, index))
+        ]
+    return [prefix]
+
+
+def _drifted_value(value: Any) -> Any:
+    if isinstance(value, bool):
+        return not value
+    if isinstance(value, int):
+        return value + 1
+    if isinstance(value, float):
+        return value + 0.5
+    if isinstance(value, str):
+        return value + "-drift"
+    if value is None:
+        return "drift"
+    if isinstance(value, list):
+        return ["drift"]
+    if isinstance(value, dict):
+        return {"drift": True}
+    raise AssertionError(f"unsupported mutation value: {value!r}")
+
+
+def _materialize_study_root(path: Path) -> None:
+    declaration = _declaration_value()
+    source_paths = set(REQUIRED_SOURCE_ROLES)
+    source_paths.update(item["path"] for item in declaration["comparator"]["artifacts"])
+    source_paths.update({DECLARATION_PATH_V4, DECLARATION_RECEIPT_PATH_V4})
+    for relative_path in sorted(source_paths):
+        destination = path / relative_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / relative_path, destination)
+
+
 def test_exact_prospective_declaration_record_validates_sources() -> None:
     declaration = ProspectiveStudyDeclarationV4.from_dict(_declaration_value())
 
@@ -107,6 +158,25 @@ def test_exact_prospective_declaration_record_validates_sources() -> None:
     assert declaration.runner_configuration.context_window == 16384
     assert declaration.runner_configuration.thinking_enabled is False
     assert len(declaration.endpoints) == 20
+
+
+def test_comparator_matrix_conservatively_classifies_changed_contracts() -> None:
+    matrix = {
+        item["v4_field"]: item["classification"] for item in FROZEN_COMPARATOR["v3_to_v4_fields"]
+    }
+
+    assert matrix["emitted_fact_coverage"] == "directly_comparable"
+    assert matrix["emitted_caveat_coverage"] == "directly_comparable"
+    assert matrix["invalid_model_output_rate"] == "transformed"
+    assert matrix["replay_semantic_variance"] == "transformed"
+    assert matrix["verified_draft_fact_coverage"] == "transformed"
+    assert matrix["verified_draft_caveat_retention"] == "transformed"
+    assert matrix["accepted_partially_excluded_refused_terminal_outcomes"] == "transformed"
+    assert matrix["latency_ms_input_tokens_output_tokens"] == "transformed"
+    assert matrix["task_skeleton_coverage_unknown_duplicate_omitted_rates"] == "not_comparable"
+    assert matrix["unsupported_claim_rate"] == "not_comparable"
+    assert matrix["evidence_citation_validity"] == "not_comparable"
+    assert matrix["peak_memory_mb_peak_metal_memory_mb"] == "not_comparable"
 
 
 def test_committed_declaration_and_receipt_are_closed() -> None:
@@ -120,7 +190,7 @@ def test_committed_declaration_and_receipt_are_closed() -> None:
     assert declaration.study_id == STUDY_ID_V4
     assert (
         receipt.declaration_sha256
-        == "e838b2a09245d1684c3bc41e39d49d09b5ff700703929aa1e6fe21b5c90a4090"
+        == "063b6055d430f14637d3dab05d1471cfc8e2fcf043b4030c633a956eff94a6c6"
     )
 
 
@@ -216,6 +286,21 @@ def test_declaration_rejects_frozen_field_drift(
     assert caught.value.code == error_code
 
 
+def test_every_frozen_declaration_leaf_rejects_drift() -> None:
+    original = _declaration_value()
+    for path in _mutation_paths(original):
+        changed = copy.deepcopy(original)
+        current: Any = changed
+        for component in path:
+            current = current[component]
+        _mutate(changed, path, _drifted_value(current))
+        try:
+            ProspectiveStudyDeclarationV4.from_dict(changed)
+        except EvidenceError:
+            continue
+        pytest.fail(f"declaration mutation was accepted at {path!r}")
+
+
 def test_declaration_rejects_unknown_fields_and_duplicate_paths() -> None:
     unknown = _declaration_value()
     unknown["unexpected"] = True
@@ -228,6 +313,12 @@ def test_declaration_rejects_unknown_fields_and_duplicate_paths() -> None:
     with pytest.raises(EvidenceError) as caught:
         ProspectiveStudyDeclarationV4.from_dict(duplicate)
     assert caught.value.code == "duplicate_or_unsorted_source_path"
+
+    unsafe = _declaration_value()
+    unsafe["sources"][0]["path"] = "../outside.py"
+    with pytest.raises(EvidenceError) as caught:
+        ProspectiveStudyDeclarationV4.from_dict(unsafe)
+    assert caught.value.code == "unsafe_path"
 
 
 def test_declaration_rejects_source_digest_and_noncanonical_json(tmp_path: Path) -> None:
@@ -266,6 +357,37 @@ def test_declaration_rejects_source_digest_and_noncanonical_json(tmp_path: Path)
     with pytest.raises(EvidenceError) as caught:
         load_json(path)
     assert caught.value.code == "noncanonical_json"
+
+
+def test_declaration_source_verification_rejects_symlink(tmp_path: Path) -> None:
+    _materialize_study_root(tmp_path)
+    relative_path = Path("src/voxelscope/atomic.py")
+    candidate = tmp_path / relative_path
+    candidate.unlink()
+    try:
+        candidate.symlink_to(ROOT / relative_path)
+    except OSError:
+        pytest.skip("symlink creation unavailable")
+
+    declaration = ProspectiveStudyDeclarationV4.from_dict(_declaration_value())
+    with pytest.raises(EvidenceError) as caught:
+        declaration.verify_sources(tmp_path)
+    assert caught.value.code == "symlink_forbidden"
+
+
+def test_declaration_receipt_rejects_canonical_tampering(tmp_path: Path) -> None:
+    declaration_path = tmp_path / "study-declaration.json"
+    receipt_path = tmp_path / "study-declaration-receipt.json"
+    shutil.copyfile(ROOT / DECLARATION_PATH_V4, declaration_path)
+    shutil.copyfile(ROOT / DECLARATION_RECEIPT_PATH_V4, receipt_path)
+    value = load_json(declaration_path)
+    assert isinstance(value, dict)
+    value["status"] = "tampered"
+    write_json(declaration_path, value)
+
+    with pytest.raises(EvidenceError) as caught:
+        verify_study_declaration_receipt_v4(receipt_path, declaration_path)
+    assert caught.value.code == "study_declaration_digest_mismatch"
 
 
 class _BoundRunner:
@@ -307,6 +429,77 @@ def test_target_model_requires_declaration_binding() -> None:
     assert caught.value.code == "missing_study_declaration_binding"
 
 
+def test_reserved_study_output_rejects_unbound_runner(tmp_path: Path) -> None:
+    output = tmp_path / BENCHMARK_OUTPUT_PATH_V4
+
+    with pytest.raises(EvidenceError) as caught:
+        run_benchmark_v4(
+            tmp_path / "atlas-not-read.json",
+            V4_FIXTURE,
+            output,
+            RecordedDraftRunnerV4(),
+        )
+
+    assert caught.value.code == "missing_study_declaration_binding"
+    assert not output.exists()
+    assert not (tmp_path / ATTEMPT_MARKER_PATH_V4).exists()
+
+
+def test_study_execution_rejects_unverified_declaration_digest(tmp_path: Path) -> None:
+    _materialize_study_root(tmp_path)
+    atlas, _ = assemble_gbm_evidence_atlas(ATLAS_MANIFEST)
+    atlas_path = tmp_path / "atlas.json"
+    write_json(atlas_path, atlas)
+    declaration = ProspectiveStudyDeclarationV4.from_dict(_declaration_value())
+    runner = _BoundRunner(declaration, "d" * 64, fail_validation=False)
+
+    with pytest.raises(EvidenceError) as caught:
+        run_benchmark_v4(
+            atlas_path,
+            V4_FIXTURE,
+            tmp_path / BENCHMARK_OUTPUT_PATH_V4,
+            runner,
+            study_declaration=declaration,
+            study_declaration_sha256="d" * 64,
+            repository_root=tmp_path,
+        )
+
+    assert caught.value.code == "study_declaration_digest_mismatch"
+    assert runner.generation_count == 0
+    assert not (tmp_path / ATTEMPT_MARKER_PATH_V4).exists()
+
+
+def test_cli_requires_explicit_declaration_digest_authorization(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = v4_cli_main(
+        [
+            "benchmark",
+            "--atlas",
+            str(tmp_path / "atlas-not-read.json"),
+            "--fixtures",
+            str(V4_FIXTURE),
+            "--output",
+            str(tmp_path / BENCHMARK_OUTPUT_PATH_V4),
+            "--runner",
+            "ollama",
+            "--declaration",
+            DECLARATION_PATH_V4,
+            "--repository-root",
+            str(ROOT),
+            "--authorize-study",
+            STUDY_ID_V4,
+            "--authorize-declaration-sha256",
+            "0" * 64,
+        ]
+    )
+
+    assert result == 2
+    assert "ERROR study_execution_not_authorized" in capsys.readouterr().err
+    assert not (tmp_path / BENCHMARK_OUTPUT_PATH_V4).exists()
+
+
 def test_preflight_checks_identity_twice_without_generation() -> None:
     declaration = ProspectiveStudyDeclarationV4.from_dict(_declaration_value())
     runner = _BoundRunner(declaration, "d" * 64, fail_validation=False)
@@ -324,13 +517,78 @@ def test_preflight_checks_identity_twice_without_generation() -> None:
     ]
 
 
+def test_real_preflight_adapter_uses_only_four_read_only_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests: list[tuple[str, str, bytes | None]] = []
+
+    class Response:
+        def __init__(self, body: bytes) -> None:
+            self.body = body
+
+        def __enter__(self) -> Response:
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return self.body
+
+    def respond(request: Any, _: float) -> Response:
+        requests.append((request.get_method(), request.full_url, request.data))
+        if request.full_url.endswith("/api/version"):
+            return Response(canonical_json_bytes({"version": "0.35.1"}))
+        if request.full_url.endswith("/api/tags"):
+            return Response(
+                canonical_json_bytes(
+                    {
+                        "models": [
+                            {
+                                "digest": (
+                                    "e56358ca25dd14db6853a9f68a92d717"
+                                    "aaa6f0a94250a72d1a0f3d86a9f30130"
+                                ),
+                                "model": "qwen3:8b-q8_0",
+                                "name": "qwen3:8b-q8_0",
+                            }
+                        ]
+                    }
+                )
+            )
+        raise AssertionError(f"unexpected preflight URL: {request.full_url}")
+
+    monkeypatch.setattr(v4_module, "_open_local_model_request", respond)
+    runner = OllamaRunnerV4(
+        "http://127.0.0.1:11434",
+        "qwen3:8b-q8_0",
+        "e56358ca25dd14db6853a9f68a92d717aaa6f0a94250a72d1a0f3d86a9f30130",
+        "0.35.1",
+        False,
+        300.0,
+        16384,
+        study_declaration_sha256="d" * 64,
+    )
+
+    result = preflight_study_v4(runner)
+
+    assert result["generation_requests"] == 0
+    assert requests == [
+        ("GET", "http://127.0.0.1:11434/api/version", None),
+        ("GET", "http://127.0.0.1:11434/api/tags", None),
+        ("GET", "http://127.0.0.1:11434/api/version", None),
+        ("GET", "http://127.0.0.1:11434/api/tags", None),
+    ]
+
+
 def test_failed_bound_attempt_is_consumed_without_publication(tmp_path: Path) -> None:
+    _materialize_study_root(tmp_path)
     atlas, _ = assemble_gbm_evidence_atlas(ATLAS_MANIFEST)
     atlas_path = tmp_path / "atlas.json"
     write_json(atlas_path, atlas)
     assert sha256_bytes(canonical_json_bytes(atlas)) == FROZEN_DESIGN["synthetic_atlas_sha256"]
     declaration = ProspectiveStudyDeclarationV4.from_dict(_declaration_value())
-    declaration_sha256 = "d" * 64
+    declaration_sha256 = sha256_bytes(canonical_json_bytes(declaration.to_dict()))
     runner = _BoundRunner(declaration, declaration_sha256, fail_validation=True)
     output = tmp_path / BENCHMARK_OUTPUT_PATH_V4
 

@@ -60,6 +60,12 @@ ATLAS_SHA256 = "5a9f1a2078d951b3f10ff909b5c341e4071b5ed92050283c31859521b8c88647
 FIXTURE_SHA256 = "0db99c6ef56723df0cc18b4d692049cfb70aca196ee06601c72f99a2fb1ce0a8"
 
 REQUIRED_SOURCE_ROLES = {
+    "src/voxelscope/atomic.py": ("atomic_no_clobber_publication",),
+    "src/voxelscope/canonical.py": (
+        "canonical_json",
+        "digest",
+        "path_safety",
+    ),
     "src/voxelscope/evidence_communication.py": ("shared_v3_planner_dependency",),
     "src/voxelscope/evidence_communication_records.py": ("shared_record_dependency",),
     "src/voxelscope/evidence_benchmark_records.py": ("shared_benchmark_records",),
@@ -76,6 +82,8 @@ REQUIRED_SOURCE_ROLES = {
         "declaration_schema",
         "execution_binding",
     ),
+    "src/voxelscope/gbm_atlas.py": ("atlas_schema_loader_dependency",),
+    "src/voxelscope/records.py": ("strict_record_validation",),
     "research/gbm-evidence-communication-benchmark-v4/benchmark-fixtures.json": ("fixture",),
     "research/gbm-evidence-atlas-v1/source-manifest.json": ("atlas_manifest",),
     "research/gbm-evidence-atlas-v1/evidence-items.json": ("atlas_evidence_items",),
@@ -421,7 +429,10 @@ FROZEN_ENDPOINTS = (
         "denominator": "18 frozen requests",
         "kind": "primary",
         "name": "partially_excluded_terminal_outcome_rate",
-        "numerator": "runs whose terminal state is partially_excluded",
+        "numerator": (
+            "runs whose exact artifact terminal state is accepted_with_exclusions, "
+            "reported as partially excluded"
+        ),
     },
     {
         "denominator": "18 frozen requests",
@@ -475,10 +486,10 @@ FROZEN_V3_FACTS = {
 
 FROZEN_COMPARATOR_MATRIX = (
     {
-        "classification": "directly_comparable",
+        "classification": "transformed",
         "v3_field": "invalid_model_output_rate",
         "v4_field": "invalid_model_output_rate",
-        "rule": "side_by_side_descriptive_only_same_request_denominator",
+        "rule": ("same_request_denominator_but_prompt_schema_and_generated_contract_changed"),
     },
     {
         "classification": "directly_comparable",
@@ -493,10 +504,10 @@ FROZEN_COMPARATOR_MATRIX = (
         "rule": "side_by_side_descriptive_only_same_caveat_plan_denominator",
     },
     {
-        "classification": "directly_comparable",
+        "classification": "transformed",
         "v3_field": "replay_semantic_variance",
         "v4_field": "replay_semantic_variance",
-        "rule": "side_by_side_descriptive_only_same_nine_repeat_pair_denominator",
+        "rule": ("same_nine_repeat_pair_denominator_but_semantic_artifact_projection_changed"),
     },
     {
         "classification": "transformed",
@@ -648,7 +659,9 @@ FROZEN_EXECUTION = {
         "--runner ollama --declaration "
         "research/gbm-evidence-communication-qwen3-8b-q8-study-v4/study-declaration.json "
         "--repository-root . --authorize-study "
-        "gbm-evidence-communication-qwen3-8b-q8-study-v4"
+        "gbm-evidence-communication-qwen3-8b-q8-study-v4 "
+        "--authorize-declaration-sha256 "
+        "SHA256_FROM_VERIFIED_RECEIPT"
     ),
     "no_clobber": True,
     "no_rerun_after_generation_consumed": True,

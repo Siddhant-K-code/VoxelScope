@@ -5,7 +5,7 @@
 The prospective declaration is
 [`study-declaration.json`](../research/gbm-evidence-communication-qwen3-8b-q8-study-v4/study-declaration.json),
 SHA-256
-`e838b2a09245d1684c3bc41e39d49d09b5ff700703929aa1e6fe21b5c90a4090`.
+`063b6055d430f14637d3dab05d1471cfc8e2fcf043b4030c633a956eff94a6c6`.
 Its no-clobber receipt is
 [`study-declaration-receipt.json`](../research/gbm-evidence-communication-qwen3-8b-q8-study-v4/study-declaration-receipt.json).
 This is a prospective declaration only. No v4 model request has been generated, no
@@ -60,7 +60,9 @@ declaration:
 - emitted fact and caveat coverage;
 - verified-draft fact coverage and caveat retention;
 - evidence-citation validity and within-case replay semantic variance;
-- separate accepted, partially-excluded, and refused terminal-outcome rates.
+- separate accepted, partially-excluded, and refused terminal-outcome rates, where
+  partially excluded maps exactly to artifact terminal state
+  `accepted_with_exclusions`.
 
 Secondary endpoints are request latency and input/output token counts when recorded.
 Peak memory and peak Metal memory remain unavailable, never zero. The deterministic
@@ -78,13 +80,15 @@ JSON types, `342/342` citation validity, and `0/9` semantic variance. The declar
 pins its study tree, declaration, result summary, failure analysis, benchmark report,
 and receipt identities.
 
-Only invalid-output rate, emitted fact/caveat coverage, and within-case semantic
-variance are directly side-by-side comparable, and only descriptively. Draft
-coverage, terminal outcomes, latency, and tokens are transformed comparisons because
-the interface or prompt changed. Skeleton task metrics have no v3 field;
-unsupported-claim and citation-validity denominators or ownership changed and are not
-comparable. No result may support a causal, model-quality, safety, generalization,
-significance, or superiority claim.
+Only emitted fact/caveat coverage is directly side-by-side comparable, and only
+descriptively, because the required-plan denominators and final-prose meaning are
+unchanged. Invalid-output rate and within-case semantic variance are transformed:
+their request/pair denominators match, but the generated contract and semantic
+artifact projection changed. Draft coverage, terminal outcomes, latency, and tokens
+are also transformed because the interface or prompt changed. Skeleton task metrics
+have no v3 field; unsupported-claim and citation-validity denominators or ownership
+changed and are not comparable. No result may support a causal, model-quality,
+safety, generalization, significance, or superiority claim.
 
 ## Stop, custody, and authorization rules
 
@@ -114,7 +118,8 @@ uv run python -m voxelscope.evidence_communication_v4_cli benchmark \
   --runner ollama \
   --declaration research/gbm-evidence-communication-qwen3-8b-q8-study-v4/study-declaration.json \
   --repository-root . \
-  --authorize-study gbm-evidence-communication-qwen3-8b-q8-study-v4
+  --authorize-study gbm-evidence-communication-qwen3-8b-q8-study-v4 \
+  --authorize-declaration-sha256 063b6055d430f14637d3dab05d1471cfc8e2fcf043b4030c633a956eff94a6c6
 ```
 
 Do not run that command while this declaration PR is open.

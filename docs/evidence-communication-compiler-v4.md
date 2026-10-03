@@ -6,7 +6,7 @@ Version 4 is a prospective intervention motivated by the post-hoc analysis of th
 closed v1 Qwen3 study. It is not an observed improvement and does not alter,
 reinterpret, or authorize a rerun of that study. No real model was run or downloaded
 while implementing or validating v4. The prospective v4 declaration is now frozen at
-SHA-256 `e838b2a09245d1684c3bc41e39d49d09b5ff700703929aa1e6fe21b5c90a4090`;
+SHA-256 `063b6055d430f14637d3dab05d1471cfc8e2fcf043b4030c633a956eff94a6c6`;
 it requires independent review and merge before a separately authorized execution.
 See [the v4 study runbook](evidence-communication-v4-study.md).
 

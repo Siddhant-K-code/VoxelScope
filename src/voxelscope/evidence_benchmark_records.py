@@ -54,7 +54,6 @@ _RUN_FILENAMES = {
     "verified_artifact": "artifact.json",
     "communication_receipt": "receipt.json",
     "runner_measurement": "measurement.json",
-    "study_declaration_binding": "study-binding.json",
 }
 
 

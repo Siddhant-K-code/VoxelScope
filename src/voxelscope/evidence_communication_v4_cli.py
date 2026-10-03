@@ -80,6 +80,7 @@ def _parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--declaration", type=Path)
     benchmark.add_argument("--repository-root", type=Path, default=Path("."))
     benchmark.add_argument("--authorize-study")
+    benchmark.add_argument("--authorize-declaration-sha256")
 
     benchmark_replay = commands.add_parser("benchmark-replay")
     benchmark_replay.add_argument("--atlas", type=Path, required=True)
@@ -230,6 +231,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                     args.repository_root,
                     args.declaration,
                 )
+                if args.authorize_declaration_sha256 != declaration_sha256:
+                    raise EvidenceError(
+                        "study_execution_not_authorized",
+                        "--authorize-declaration-sha256 must equal the verified declaration digest",
+                    )
                 runner = _declared_runner(declaration, declaration_sha256)
             benchmark = run_benchmark_v4(
                 args.atlas,

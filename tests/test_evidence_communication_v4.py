@@ -29,6 +29,7 @@ from voxelscope.evidence_communication_v4 import (
     RunnerResultV4,
     _profile_prompt_identity_v4,
     _recorded_output,
+    _terminal_outcome_bucket_v4,
     compile_recorded_fixture_v4,
     derive_claim_skeletons,
     derive_communication_request_v4,
@@ -790,6 +791,21 @@ def test_recorded_compile_and_replay_are_byte_deterministic(tmp_path: Path) -> N
     assert first_result == second_result
     assert _tree_bytes(first) == _tree_bytes(second)
     assert replay_communication_v4(atlas_path, first) == first_result
+
+
+@pytest.mark.parametrize(
+    ("terminal_state", "bucket"),
+    [
+        ("accepted", "accepted"),
+        ("accepted_with_exclusions", "partially_excluded"),
+        ("refused", "refused"),
+    ],
+)
+def test_terminal_outcome_bucket_uses_exact_artifact_states(
+    terminal_state: str,
+    bucket: str,
+) -> None:
+    assert _terminal_outcome_bucket_v4(terminal_state) == bucket
 
 
 def test_recorded_benchmark_replay_and_exact_metrics(tmp_path: Path) -> None:
