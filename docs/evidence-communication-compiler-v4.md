@@ -8,10 +8,11 @@ does not alter or reinterpret that study, and does not authorize a rerun. No rea
 model was run or downloaded while implementing or validating v4. A new reviewed,
 prospectively frozen declaration is required before comparing v4 with the v1 result.
 
-The implementation and recorded benchmark remain synthetic and non-clinical.
-Clinical use, diagnosis, prognosis, treatment, protein ranking, therapeutic-target
-designation, and druggability remain **NO-GO**. No result supports a biological,
-causal, clinical, patient-specific, ranking, target, or actionability claim.
+The implementation and recorded synthetic fixture/replay benchmark remain
+non-clinical. Clinical use, diagnosis, prognosis, treatment, protein ranking,
+therapeutic-target designation, and druggability remain **NO-GO**. No result supports
+a biological, causal, clinical, patient-specific, ranking, target, or actionability
+claim.
 
 Research evidence only. Not for diagnosis or treatment decisions.
 
@@ -157,7 +158,7 @@ filter. Trusted safety copy is not passed through that model-text filter.
 
 ## Commands
 
-Run the frozen synthetic recorded benchmark without a model or network:
+Run the recorded synthetic fixture benchmark without a model or network:
 
 ```bash
 uv run python -m voxelscope.evidence_communication_v4_cli benchmark \
@@ -185,12 +186,13 @@ or symlinked entries. It reconstructs request planning, skeleton derivation, tru
 expansion, verification, canonical prose, metrics, index, and receipt without model
 or network access.
 
-## Frozen recorded benchmark
+## Recorded synthetic fixture and replay metrics
 
 The fixture retains the same nine conceptual cases and two repeats as v3. It is a
 synthetic contract test, not model-quality evidence. Two cases intentionally produce
 digest-safe task-set failures, and two parsed cases intentionally test semantic
-refusal. Exact recorded metrics are:
+refusal. The values below are deterministic recorded-fixture and offline-replay
+values, not observed model evidence or an observed v4 improvement:
 
 | Metric | Result |
 |---|---:|
@@ -229,8 +231,12 @@ execution.
    reused.
 2. Bind the declaration to the reviewed v4 code, fixture digest, atlas digest,
    prompt digest, transformation, verifier, and exact measurement limitations.
-3. Review the already-installed model's full 64-character manifest digest and exact
-   localhost runtime identity. A tag or digest prefix is insufficient.
+3. Review and freeze the already-installed model's full 64-character manifest digest
+   and exact localhost runtime identity in that new declaration. Read-only preflight
+   observed Ollama `0.35.1` and tag `qwen3:8b-q8_0` resolving twice to
+   `e56358ca25dd14db6853a9f68a92d717aaa6f0a94250a72d1a0f3d86a9f30130`;
+   these are future-declaration inputs only. This implementation PR does not freeze
+   or authorize that identity, and no generation request was made.
 4. Reconfirm that no real biomedical, patient, MRI, credential, token, or private
    path enters the run.
 5. Preserve all clinical, diagnosis, prognosis, treatment, ranking,

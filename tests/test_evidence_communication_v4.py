@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import dataclasses
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -29,6 +30,7 @@ from voxelscope.evidence_communication_v4 import (
     _profile_prompt_identity_v4,
     _recorded_output,
     compile_recorded_fixture_v4,
+    derive_claim_skeletons,
     derive_communication_request_v4,
     draft_plan_json_schema,
     parse_model_draft_plan,
@@ -113,6 +115,7 @@ def _ollama_responder(
     *,
     digest_by_validation: dict[int, str] | None = None,
     version_by_validation: dict[int, str] | None = None,
+    tag_extra: dict[str, Any] | None = None,
     generated_requests: list[dict[str, Any]] | None = None,
     generation_error: Exception | None = None,
 ) -> Any:
@@ -144,6 +147,7 @@ def _ollama_responder(
                                 "digest": digest,
                                 "model": "installed-test-model",
                                 "name": "installed-test-model",
+                                **(tag_extra or {}),
                             }
                         ]
                     }
@@ -278,6 +282,26 @@ def test_paired_skeleton_bindings_are_explicit() -> None:
         "caveat:source_target_boundary",
     ) in bindings
     assert sum(len(item) > 1 for item in bindings) == 2
+
+
+def test_grouped_skeletons_reject_conflicting_caveat_semantics() -> None:
+    _, request = _request()
+    plan = tuple(
+        (
+            dataclasses.replace(item, context="conflicting-context")
+            if item.requirement_id == "caveat:directional_scope"
+            else item
+        )
+        for item in request.plan
+    )
+
+    with pytest.raises(EvidenceError) as caught:
+        derive_claim_skeletons(
+            plan,
+            request.canonical_gene_id,
+            request.canonical_protein_id,
+        )
+    assert caught.value.code == "incompatible_skeleton_semantics"
 
 
 def test_ollama_body_uses_exact_json_schema_object() -> None:
@@ -568,6 +592,33 @@ def test_ollama_identity_is_checked_before_and_after_every_generation(
     assert len(generations) == generation_count
 
 
+def test_ollama_accepts_official_capabilities_and_rejects_remote_tag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = _ollama_response("{}")
+    monkeypatch.setattr(
+        v4_module,
+        "_open_local_model_request",
+        _ollama_responder(response, tag_extra={"capabilities": ["completion"]}),
+    )
+    _ollama_runner().validate_identity()
+
+    monkeypatch.setattr(
+        v4_module,
+        "_open_local_model_request",
+        _ollama_responder(
+            response,
+            tag_extra={
+                "remote_host": "https://remote.invalid",
+                "remote_model": "remote-model",
+            },
+        ),
+    )
+    with pytest.raises(EvidenceError) as caught:
+        _ollama_runner().validate_identity()
+    assert caught.value.code == "local_model_remote_execution_forbidden"
+
+
 def test_outer_protocol_and_transport_drift_abort(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -608,6 +659,44 @@ def test_outer_protocol_and_transport_drift_abort(
     assert not output.exists()
 
 
+def test_ollama_invalid_unicode_model_text_is_digest_safe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, request = _request()
+    response_text = '{"entries":[{"draft_text":"\ud800","skeleton_id":"irrelevant"}]}'
+    monkeypatch.setattr(
+        v4_module,
+        "_open_local_model_request",
+        _ollama_responder(_ollama_response(response_text)),
+    )
+
+    result = _ollama_runner().run(request, "clean", 0)
+
+    assert result.envelope is None
+    assert result.invalid_model_output is not None
+    assert result.invalid_model_output.error_code == "invalid_draft_text_encoding"
+    invalid_bytes = response_text.encode("utf-8", errors="surrogatepass")
+    assert result.invalid_model_output.output_sha256 == sha256_bytes(invalid_bytes)
+    assert result.invalid_model_output.output_size_bytes == len(invalid_bytes)
+    assert "irrelevant" not in canonical_json_bytes(result.invalid_model_output.to_dict()).decode(
+        "ascii"
+    )
+
+
+@pytest.mark.parametrize("timeout_seconds", [0.0, -1.0, float("nan"), float("inf")])
+def test_ollama_rejects_nonpositive_or_nonfinite_timeout(timeout_seconds: float) -> None:
+    with pytest.raises(EvidenceError) as caught:
+        OllamaRunnerV4(
+            "http://127.0.0.1:11434",
+            "installed-test-model",
+            OLLAMA_DIGEST,
+            OLLAMA_VERSION,
+            False,
+            timeout_seconds=timeout_seconds,
+        )
+    assert caught.value.code == "invalid_timeout"
+
+
 @pytest.mark.parametrize(
     ("mutation", "error_code"),
     [
@@ -615,6 +704,9 @@ def test_outer_protocol_and_transport_drift_abort(
         ("false_done", "local_model_incomplete_response"),
         ("missing_model", "local_model_protocol_failed"),
         ("model_drift", "local_model_response_model_mismatch"),
+        ("thinking_drift", "local_model_thinking_mode_mismatch"),
+        ("remote_host", "local_model_remote_execution_forbidden"),
+        ("remote_model", "local_model_remote_execution_forbidden"),
     ],
 )
 def test_ollama_completion_and_model_identity_drift_abort_publication(
@@ -633,8 +725,12 @@ def test_ollama_completion_and_model_identity_drift_abort_publication(
         response_value["done"] = False
     elif mutation == "missing_model":
         del response_value["model"]
-    else:
+    elif mutation == "model_drift":
         response_value["model"] = "different-model"
+    elif mutation == "thinking_drift":
+        response_value["thinking"] = "unexpected thinking content"
+    else:
+        response_value[mutation] = "unexpected-remote-value"
     monkeypatch.setattr(
         v4_module,
         "_open_local_model_request",
@@ -651,6 +747,24 @@ def test_ollama_completion_and_model_identity_drift_abort_publication(
         )
     assert caught.value.code == error_code
     assert not output.exists()
+
+
+def test_fixture_rejects_duplicate_expected_run_entries(tmp_path: Path) -> None:
+    fixture = load_json(V4_BENCHMARK_FIXTURE)
+    assert isinstance(fixture, dict)
+    cases = fixture["cases"]
+    assert isinstance(cases, list)
+    first = cases[0]
+    assert isinstance(first, dict)
+    expected_runs = first["expected_runs"]
+    assert isinstance(expected_runs, list)
+    expected_runs.append(copy.deepcopy(expected_runs[0]))
+    path = tmp_path / "duplicate-expected-run.json"
+    write_json(path, fixture)
+
+    with pytest.raises(EvidenceError) as caught:
+        v4_module._load_benchmark_cases_v4(path)
+    assert caught.value.code == "expected_run_set_mismatch"
 
 
 def test_recorded_compile_and_replay_are_byte_deterministic(tmp_path: Path) -> None:

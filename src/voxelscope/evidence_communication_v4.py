@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import itertools
+import math
 import os
 import re
 import shutil
@@ -202,6 +203,20 @@ def _skeleton(
         raise EvidenceError("incompatible_skeleton_sources", primary.requirement_id)
     if any(item.state != primary.state for item in requirements):
         raise EvidenceError("incompatible_skeleton_states", primary.requirement_id)
+    optional_fields = (
+        "comparison_key",
+        "context",
+        "direction",
+        "modality",
+        "unit",
+        "value",
+    )
+    if any(
+        getattr(item, field) is not None and getattr(item, field) != getattr(primary, field)
+        for item in requirements[1:]
+        for field in optional_fields
+    ):
+        raise EvidenceError("incompatible_skeleton_semantics", primary.requirement_id)
     semantic = {
         "canonical_gene_id": request.canonical_gene_id,
         "canonical_protein_id": request.canonical_protein_id,
@@ -248,11 +263,15 @@ def derive_claim_skeletons(
     )
     if any(requirement_id not in by_id for requirement_id in directional_ids):
         raise EvidenceError("missing_directional_binding", canonical_protein_id)
+    if by_id[directional_ids[0]].kind != "fact" or by_id[directional_ids[1]].kind != "caveat":
+        raise EvidenceError("invalid_directional_binding", canonical_protein_id)
     target_facts = tuple(
         item for item in plan if item.claim_type == "source_target_evidence" and item.kind == "fact"
     )
     target_boundary = by_id.get("caveat:source_target_boundary")
-    if (len(target_facts) == 1) != (target_boundary is not None):
+    if (len(target_facts) == 1) != (target_boundary is not None) or (
+        target_boundary is not None and target_boundary.kind != "caveat"
+    ):
         raise EvidenceError(
             "invalid_source_target_binding",
             "exactly one source-target fact and boundary must be paired",
@@ -1104,7 +1123,7 @@ class OllamaRunnerV4:
                 "unsupported_thinking_mode",
                 "the v4 bounded-draft contract requires thinking=false",
             )
-        if timeout_seconds <= 0:
+        if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
             raise EvidenceError("invalid_timeout", str(timeout_seconds))
         if context_window is not None and context_window <= 0:
             raise EvidenceError("invalid_context_window", str(context_window))
@@ -1179,11 +1198,14 @@ class OllamaRunnerV4:
         for item in require_list(tags_response["models"], "models"):
             model = require_object(item, "Ollama model")
             allowed = {
+                "capabilities",
                 "details",
                 "digest",
                 "model",
                 "modified_at",
                 "name",
+                "remote_host",
+                "remote_model",
                 "size",
             }
             if not set(model).issubset(allowed):
@@ -1201,7 +1223,21 @@ class OllamaRunnerV4:
                 "local_model_tag_resolution_mismatch",
                 f"{self._model} resolved to {len(matches)} models",
             )
-        observed_digest = require_string(matches[0].get("digest"), "model digest")
+        matched_model = matches[0]
+        for field in ("remote_host", "remote_model"):
+            if field in matched_model and require_string(
+                matched_model[field],
+                field,
+                nonempty=False,
+            ):
+                raise EvidenceError(
+                    "local_model_remote_execution_forbidden",
+                    f"matched tag has non-empty {field}",
+                )
+        if "capabilities" in matched_model:
+            for capability in require_list(matched_model["capabilities"], "capabilities"):
+                require_string(capability, "capability")
+        observed_digest = require_string(matched_model.get("digest"), "model digest")
         if observed_digest.startswith("sha256:"):
             observed_digest = observed_digest.removeprefix("sha256:")
         require_sha256(observed_digest, "observed model manifest digest")
@@ -1323,6 +1359,25 @@ class OllamaRunnerV4:
                     "local_model_response_model_mismatch",
                     f"declared={self._model} observed={response_model}",
                 )
+            for field in ("remote_host", "remote_model"):
+                if field in response_value and require_string(
+                    response_value[field],
+                    field,
+                    nonempty=False,
+                ):
+                    raise EvidenceError(
+                        "local_model_remote_execution_forbidden",
+                        f"{field} must be absent or empty",
+                    )
+            if "thinking" in response_value and require_string(
+                response_value["thinking"],
+                "thinking",
+                nonempty=False,
+            ):
+                raise EvidenceError(
+                    "local_model_thinking_mode_mismatch",
+                    "Ollama returned thinking content despite think=false",
+                )
             response_text = require_string(response_value["response"], "response")
             input_tokens = (
                 require_int(response_value["prompt_eval_count"], "prompt_eval_count")
@@ -1351,15 +1406,30 @@ class OllamaRunnerV4:
             if exc.code in {
                 "local_model_incomplete_response",
                 "local_model_protocol_failed",
+                "local_model_remote_execution_forbidden",
                 "local_model_response_model_mismatch",
+                "local_model_thinking_mode_mismatch",
             }:
                 raise
             raise EvidenceError("local_model_protocol_failed", exc.code) from exc
-        envelope, invalid = parse_model_draft_plan(
-            request,
-            self.identity,
-            response_text.encode("utf-8"),
-        )
+        envelope: DraftPlanEnvelopeV4 | None
+        invalid: InvalidModelOutputV4 | None
+        try:
+            model_output = response_text.encode("utf-8")
+        except UnicodeEncodeError:
+            invalid_bytes = response_text.encode("utf-8", errors="surrogatepass")
+            envelope = None
+            invalid = _invalid_model_output(
+                request,
+                invalid_bytes,
+                "invalid_draft_text_encoding",
+            )
+        else:
+            envelope, invalid = parse_model_draft_plan(
+                request,
+                self.identity,
+                model_output,
+            )
         return RunnerResultV4(
             envelope=envelope,
             input_tokens=input_tokens,
@@ -1498,7 +1568,9 @@ def _load_benchmark_cases_v4(path: Path) -> tuple[BenchmarkCaseV4, ...]:
                     repeat_index=require_int(expected["repeat_index"], "repeat_index"),
                 )
             )
-        if {item.repeat_index for item in expected_runs} != set(range(repeats)):
+        if len(expected_runs) != repeats or {item.repeat_index for item in expected_runs} != set(
+            range(repeats)
+        ):
             raise EvidenceError("expected_run_set_mismatch", case_id)
         cases.append(
             BenchmarkCaseV4(
