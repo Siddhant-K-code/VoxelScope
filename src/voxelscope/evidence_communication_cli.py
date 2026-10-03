@@ -62,6 +62,7 @@ def _parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--model")
     benchmark.add_argument("--model-digest")
     benchmark.add_argument("--runtime-version")
+    benchmark.add_argument("--thinking", choices=["disabled"])
     benchmark.add_argument("--timeout-seconds", type=float, default=120.0)
     benchmark.add_argument("--num-ctx", type=int)
     benchmark.add_argument("--declared-environment", action="append", default=[])
@@ -143,11 +144,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "missing_runtime_version",
                         "--runtime-version is required for the Ollama runner",
                     )
+                if args.thinking is None:
+                    raise EvidenceError(
+                        "missing_thinking_mode",
+                        "--thinking disabled is required for the Ollama runner",
+                    )
                 runner = OllamaRunner(
                     args.endpoint,
                     args.model,
                     args.model_digest,
                     args.runtime_version,
+                    False,
                     args.timeout_seconds,
                     args.num_ctx,
                     _declared_environment(args.declared_environment),

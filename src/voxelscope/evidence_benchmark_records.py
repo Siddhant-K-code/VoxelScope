@@ -14,6 +14,7 @@ from .evidence_communication_records import (
     ModelIdentity,
 )
 from .records import (
+    require_bool,
     require_int,
     require_list,
     require_number,
@@ -143,6 +144,7 @@ class RunnerConfiguration:
     json_mode: str
     options: tuple[RunnerOption, ...]
     temperature: float | None
+    thinking_enabled: bool | None
     timeout_seconds: float | None
 
     def __post_init__(self) -> None:
@@ -152,6 +154,16 @@ class RunnerConfiguration:
             raise EvidenceError("invalid_endpoint_locality", self.endpoint_locality)
         if self.json_mode not in {"strict_json", "recorded_fixture"}:
             raise EvidenceError("invalid_json_mode", self.json_mode)
+        if self.endpoint_locality == "localhost_only" and self.thinking_enabled is None:
+            raise EvidenceError(
+                "missing_thinking_mode",
+                "Ollama runner configuration requires an explicit thinking mode",
+            )
+        if self.endpoint_locality == "not_applicable" and self.thinking_enabled is not None:
+            raise EvidenceError(
+                "invalid_thinking_mode",
+                "recorded runner thinking mode must be null",
+            )
         if self.timeout_seconds is not None and self.timeout_seconds <= 0:
             raise EvidenceError("invalid_timeout", str(self.timeout_seconds))
         names = tuple(item.name for item in self.options)
@@ -175,6 +187,7 @@ class RunnerConfiguration:
                 "json_mode",
                 "options",
                 "temperature",
+                "thinking_enabled",
                 "timeout_seconds",
             },
             "RunnerConfiguration",
@@ -197,6 +210,11 @@ class RunnerConfiguration:
                 for item in require_list(value["options"], "options")
             ),
             _optional_number(value["temperature"], "temperature"),
+            (
+                require_bool(value["thinking_enabled"], "thinking_enabled")
+                if value["thinking_enabled"] is not None
+                else None
+            ),
             _optional_number(value["timeout_seconds"], "timeout_seconds"),
         )
 
@@ -208,6 +226,7 @@ class RunnerConfiguration:
             "json_mode": self.json_mode,
             "options": [item.to_dict() for item in self.options],
             "temperature": self.temperature,
+            "thinking_enabled": self.thinking_enabled,
             "timeout_seconds": self.timeout_seconds,
         }
 

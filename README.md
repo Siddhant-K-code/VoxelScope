@@ -209,9 +209,25 @@ The committed benchmark runs offline without a model installation or network. It
 includes accepted, partially excluded, and refused recorded drafts. A localhost-only
 Ollama adapter can evaluate an already installed model without adding a mandatory
 dependency or downloading model files. It refuses a tag-only identity and verifies
-the full model manifest digest and exact Ollama runtime version before generation.
-Envelope noncompliance is retained as a digest-safe refused result instead of
-aborting the remaining runs.
+the full model manifest digest and exact Ollama runtime version before and after every
+generation. The first frozen Qwen3 mode requires top-level `think=false`; omission is
+forbidden because Ollama enables thinking by default for supported models. This
+non-thinking mode lowers cost and makes structured-output behavior more tightly
+bounded. Envelope noncompliance is retained as a digest-safe refused result instead
+of aborting the remaining runs.
+
+```bash
+python -m voxelscope.evidence_communication_cli benchmark \
+  --atlas build/gbm-atlas/atlas.json \
+  --fixtures research/gbm-evidence-communication-benchmark-v3/benchmark-fixtures.json \
+  --runner ollama \
+  --endpoint http://127.0.0.1:11434 \
+  --model YOUR_ALREADY_INSTALLED_MODEL \
+  --model-digest FULL_64_CHARACTER_MANIFEST_SHA256 \
+  --runtime-version EXACT_OLLAMA_VERSION \
+  --thinking disabled \
+  --output build/evidence-communication-ollama
+```
 
 Every case and repeat is published under a validated stable path with its exact
 request, parsed draft or digest-safe invalid-output record, verified artifact,

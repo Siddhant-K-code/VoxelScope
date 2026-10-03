@@ -13,6 +13,7 @@ from voxelscope.canonical import (
     EvidenceError,
     canonical_json_bytes,
     load_json,
+    load_json_bytes,
     sha256_bytes,
     write_json,
 )
@@ -47,7 +48,7 @@ BENCHMARK_FIXTURE = (
     ROOT / "research/gbm-evidence-communication-benchmark-v3" / "benchmark-fixtures.json"
 )
 OLLAMA_MODEL_DIGEST = "a" * 64
-OLLAMA_RUNTIME_VERSION = "test-ollama-0.1"
+OLLAMA_RUNTIME_VERSION = "0.35.1"
 
 
 def _atlas() -> tuple[dict[str, Any], str]:
@@ -113,6 +114,7 @@ class _AlternateClaimIdRunner:
             json_mode="recorded_fixture",
             options=(),
             temperature=None,
+            thinking_enabled=None,
             timeout_seconds=None,
         )
 
@@ -168,6 +170,7 @@ def _ollama_responder(
     observed_digest: str = OLLAMA_MODEL_DIGEST,
     observed_version: str = OLLAMA_RUNTIME_VERSION,
     generation_error: Exception | None = None,
+    generated_requests: list[dict[str, Any]] | None = None,
 ) -> Any:
     def respond(
         request: urllib.request.Request,
@@ -192,6 +195,11 @@ def _ollama_responder(
             )
         if generation_error is not None:
             raise generation_error
+        if generated_requests is not None:
+            assert request.data is not None
+            request_value = load_json_bytes(request.data)
+            assert isinstance(request_value, dict)
+            generated_requests.append(request_value)
         return _FakeHttpResponse(generate_response)
 
     return respond
@@ -738,6 +746,25 @@ def test_benchmark_replay_rejects_noncanonical_run_json(
     assert caught.value.code == "noncanonical_json"
 
 
+def test_benchmark_replay_rejects_thinking_mode_tampering(
+    tmp_path: Path,
+) -> None:
+    atlas_path, bundle = _recorded_benchmark(tmp_path)
+    relative_path = "runs/supported-agreement/repeat-0000/measurement.json"
+    measurement = load_json(bundle / relative_path)
+    assert isinstance(measurement, dict)
+    configuration = measurement["runner_configuration"]
+    assert isinstance(configuration, dict)
+    assert configuration["thinking_enabled"] is None
+    configuration["thinking_enabled"] = False
+    write_json(bundle / relative_path, measurement)
+    _reclose_benchmark_file(bundle, relative_path)
+
+    with pytest.raises(EvidenceError) as caught:
+        replay_benchmark(atlas_path, BENCHMARK_FIXTURE, bundle)
+    assert caught.value.code == "invalid_thinking_mode"
+
+
 def test_benchmark_replay_rejects_symlinks_and_path_traversal(
     tmp_path: Path,
 ) -> None:
@@ -957,6 +984,7 @@ def test_invalid_ollama_output_is_counted_and_benchmark_continues(
     raw_model_output: str,
     error_code: str,
 ) -> None:
+    generated_requests: list[dict[str, Any]] = []
     response = canonical_json_bytes(
         {
             "eval_count": 3,
@@ -967,7 +995,7 @@ def test_invalid_ollama_output_is_counted_and_benchmark_continues(
     monkeypatch.setattr(
         communication_module,
         "_open_local_model_request",
-        _ollama_responder(response),
+        _ollama_responder(response, generated_requests=generated_requests),
     )
     atlas_path = _atlas_path(tmp_path)
     output = tmp_path / "malformed"
@@ -981,6 +1009,7 @@ def test_invalid_ollama_output_is_counted_and_benchmark_continues(
             "installed-test-model",
             OLLAMA_MODEL_DIGEST,
             OLLAMA_RUNTIME_VERSION,
+            False,
             context_window=4096,
             declared_environment={"OLLAMA_TEST_SETTING": "declared-value"},
         ),
@@ -1024,8 +1053,14 @@ def test_invalid_ollama_output_is_counted_and_benchmark_continues(
         "json_mode": "strict_json",
         "options": [{"name": "num_ctx", "value": 4096}],
         "temperature": 0.0,
+        "thinking_enabled": False,
         "timeout_seconds": 120.0,
     }
+    assert benchmark["model_identity"]["runtime_version"] == "0.35.1"
+    assert benchmark["model_identity"]["model_manifest_sha256"] == OLLAMA_MODEL_DIGEST
+    assert len(generated_requests) == 18
+    assert all(request["think"] is False for request in generated_requests)
+    assert all("think" not in request["options"] for request in generated_requests)
     invalid_run = output / "runs/supported-agreement/repeat-0000"
     assert {item.name for item in invalid_run.iterdir()} == {
         "artifact.json",
@@ -1082,9 +1117,95 @@ def test_ollama_identity_drift_aborts_without_publication(
                 "installed-test-model",
                 OLLAMA_MODEL_DIGEST,
                 OLLAMA_RUNTIME_VERSION,
+                False,
             ),
         )
     assert caught.value.code == error_code
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    ("drift_kind", "drift_validation", "error_code", "generated_count"),
+    [
+        ("digest", 3, "model_manifest_digest_mismatch", 1),
+        ("runtime", 4, "runtime_identity_mismatch", 1),
+    ],
+)
+def test_ollama_identity_is_rechecked_at_every_generation_boundary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    drift_kind: str,
+    drift_validation: int,
+    error_code: str,
+    generated_count: int,
+) -> None:
+    counts = {"generate": 0, "tags": 0, "version": 0}
+    response = canonical_json_bytes(
+        {
+            "eval_count": 1,
+            "prompt_eval_count": 1,
+            "response": "{}",
+        }
+    )
+
+    def respond(
+        request: urllib.request.Request,
+        timeout_seconds: float | None = None,
+    ) -> _FakeHttpResponse:
+        del timeout_seconds
+        if request.full_url.endswith("/api/version"):
+            counts["version"] += 1
+            version = (
+                "changed-runtime"
+                if drift_kind == "runtime" and counts["version"] >= drift_validation
+                else OLLAMA_RUNTIME_VERSION
+            )
+            return _FakeHttpResponse(canonical_json_bytes({"version": version}))
+        if request.full_url.endswith("/api/tags"):
+            counts["tags"] += 1
+            digest = (
+                "b" * 64
+                if drift_kind == "digest" and counts["tags"] >= drift_validation
+                else OLLAMA_MODEL_DIGEST
+            )
+            return _FakeHttpResponse(
+                canonical_json_bytes(
+                    {
+                        "models": [
+                            {
+                                "digest": digest,
+                                "model": "installed-test-model",
+                                "name": "installed-test-model",
+                            }
+                        ]
+                    }
+                )
+            )
+        counts["generate"] += 1
+        return _FakeHttpResponse(response)
+
+    monkeypatch.setattr(
+        communication_module,
+        "_open_local_model_request",
+        respond,
+    )
+    output = tmp_path / f"stateful-{drift_kind}"
+
+    with pytest.raises(EvidenceError) as caught:
+        run_benchmark(
+            _atlas_path(tmp_path),
+            BENCHMARK_FIXTURE,
+            output,
+            OllamaRunner(
+                "http://127.0.0.1:11434",
+                "installed-test-model",
+                OLLAMA_MODEL_DIGEST,
+                OLLAMA_RUNTIME_VERSION,
+                False,
+            ),
+        )
+    assert caught.value.code == error_code
+    assert counts["generate"] == generated_count
     assert not output.exists()
 
 
@@ -1116,11 +1237,51 @@ def test_cli_refuses_tag_only_ollama_identity_before_network(
                 "installed-test-model",
                 "--runtime-version",
                 OLLAMA_RUNTIME_VERSION,
+                "--thinking",
+                "disabled",
             ]
         )
         == 2
     )
     assert "missing_model_manifest_digest" in capsys.readouterr().err
+    assert not output.exists()
+
+
+def test_cli_refuses_omitted_ollama_thinking_mode_before_network(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        communication_module,
+        "_open_local_model_request",
+        lambda *args, **kwargs: pytest.fail("missing thinking mode attempted network access"),
+    )
+    output = tmp_path / "missing-thinking"
+
+    assert (
+        main(
+            [
+                "benchmark",
+                "--atlas",
+                str(_atlas_path(tmp_path)),
+                "--fixtures",
+                str(BENCHMARK_FIXTURE),
+                "--output",
+                str(output),
+                "--runner",
+                "ollama",
+                "--model",
+                "installed-test-model",
+                "--model-digest",
+                OLLAMA_MODEL_DIGEST,
+                "--runtime-version",
+                OLLAMA_RUNTIME_VERSION,
+            ]
+        )
+        == 2
+    )
+    assert "missing_thinking_mode" in capsys.readouterr().err
     assert not output.exists()
 
 
@@ -1148,6 +1309,7 @@ def test_ollama_transport_failure_aborts_without_publication(
                 "installed-test-model",
                 OLLAMA_MODEL_DIGEST,
                 OLLAMA_RUNTIME_VERSION,
+                False,
             ),
         )
     assert caught.value.code == "local_model_request_failed"
@@ -1161,5 +1323,6 @@ def test_ollama_adapter_refuses_nonlocal_endpoint() -> None:
             "model",
             OLLAMA_MODEL_DIGEST,
             OLLAMA_RUNTIME_VERSION,
+            False,
         )
     assert caught.value.code == "nonlocal_model_endpoint"

@@ -62,7 +62,7 @@ machine-readable and must be displayed by a consumer.
 | `voxelscope/verified-evidence-communication/v3` | Carries verified typed claims without raw model text, canonical sentences, exclusions, refusal reasons, separate draft and emitted coverage, warnings, and terminal state |
 | `voxelscope/evidence-communication-receipt/v3` | Binds request, parsed draft or digest-safe invalid-output evidence, artifact, source, prompt, model, transformation, verifier, exclusions, warnings, and closed state |
 | `voxelscope/evidence-communication-benchmark-fixture/v3` | Freezes adversarial cases, repeat counts, terminal states, and recorded custody digests |
-| `voxelscope/evidence-communication-benchmark/v3` | Carries per-run custody and semantic digests, separate coverage metrics, invalid-output outcomes, measurements, runner configuration, and aggregate metrics |
+| `voxelscope/evidence-communication-benchmark/v3` | Carries per-run custody and semantic digests, separate coverage metrics, invalid-output outcomes, measurements, explicit thinking mode, runner configuration, and aggregate metrics |
 | `voxelscope/evidence-communication-benchmark-index/v3` | Enumerates every expected run path and every request, draft or invalid-output record, verified artifact, communication receipt, and measurement digest |
 | `voxelscope/evidence-communication-runner-measurement/v3` | Records per-run latency, token, memory, and Metal measurements as measured values or explicit unavailable states |
 | `voxelscope/evidence-communication-invalid-output/v3` | Preserves only the model-output parse/schema error code, byte count, SHA-256, request identity, and immutable runner identity |
@@ -270,6 +270,7 @@ uv run python -m voxelscope.evidence_communication_cli benchmark \
   --model YOUR_ALREADY_INSTALLED_MODEL \
   --model-digest FULL_64_CHARACTER_MANIFEST_SHA256 \
   --runtime-version EXACT_OLLAMA_VERSION \
+  --thinking disabled \
   --num-ctx DECLARED_CONTEXT_WINDOW \
   --declared-environment OLLAMA_FLASH_ATTENTION=1 \
   --declared-environment OLLAMA_KV_CACHE_TYPE=q8_0 \
@@ -277,16 +278,24 @@ uv run python -m voxelscope.evidence_communication_cli benchmark \
 ```
 
 The adapter records localhost-only endpoint policy, temperature zero, strict JSON
-mode, timeout, context window, request options, and declared environment settings.
+mode, explicit thinking mode, timeout, context window, request options, and declared
+environment settings.
 Environment settings are labeled `declared_unverified`; they are custody assertions,
-not API observations. The adapter requests temperature zero and strict JSON. Malformed model JSON or an
-invalid model envelope becomes a refused `invalid_model_output` run with an error
-code, output SHA-256, and byte length. The raw malformed response is not placed in an
-artifact or benchmark file. The benchmark continues with the remaining frozen runs.
-HTTP, timeout, outer Ollama protocol, tag resolution, manifest digest, and runtime
-identity failures abort publication. Ollama token counters are recorded when present.
-The adapter measures request latency. Peak process memory and peak Metal memory remain
-unavailable unless the runner reports them.
+not API observations. Qwen3 supports thinking and Ollama enables it by default for
+supported models, so omission is not equivalent to disabled mode. This first frozen
+study requires `thinking_enabled=false` and sends top-level `"think": false` on every
+`/api/generate` request. It is intentionally non-thinking to reduce cost and tighten
+the structured-output test; `think` is never hidden in the Ollama `options` object.
+Malformed model JSON or an invalid model envelope becomes a refused
+`invalid_model_output` run with an error code, output SHA-256, and byte length. The raw
+malformed response is not placed in an artifact or benchmark file. The benchmark
+continues with the remaining frozen runs. HTTP, timeout, outer Ollama protocol, tag
+resolution, manifest digest, and runtime identity failures abort publication. Runtime
+version and tag digest are re-observed immediately before and after every generation,
+so mutable tag or runtime drift aborts the whole unpublished tree. Ollama token
+counters are recorded when present. The adapter measures request latency. Peak
+process memory and peak Metal memory remain unavailable unless the runner reports
+them.
 
 ### Prospective study declaration, not an observed result
 
@@ -316,9 +325,9 @@ caveat without adding unsupported certainty?
 
 Use the exact merged synthetic atlas and the exact benchmark fixture digest. Do not
 add real biomedical records. Record the model tag, full model manifest digest,
-adapter, local endpoint, exact runtime version, runner options, declared environment,
-prompt digest, transformation identity, verifier identity, atlas digest, fixture
-digest, and host measurement capability.
+adapter, local endpoint, exact runtime version, explicit thinking mode, runner
+options, declared environment, prompt digest, transformation identity, verifier
+identity, atlas digest, fixture digest, and host measurement capability.
 
 ### Procedure
 
@@ -326,7 +335,9 @@ digest, and host measurement capability.
 2. Build the synthetic atlas offline.
 3. Confirm that the selected local model is already installed. Do not download a
    model as part of the study.
-4. Run every frozen case for the declared repeat count with temperature zero.
+4. Run every frozen case for the declared repeat count with temperature zero and
+   top-level Ollama `think=false`. Re-resolve runtime and model manifest identity
+   immediately before and after every generation.
 5. Atomically publish the complete per-run tree and canonical index. Preserve every
    exact request, parsed model envelope, verified artifact, communication receipt,
    measurement, semantic digest, exclusion, refusal reason, and terminal state. For

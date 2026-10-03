@@ -103,6 +103,7 @@ RECORDED_RUNNER_CONFIGURATION = RunnerConfiguration(
     json_mode="recorded_fixture",
     options=(),
     temperature=None,
+    thinking_enabled=None,
     timeout_seconds=None,
 )
 _EXCLUDED_CLAIM_TYPES = (
@@ -1538,6 +1539,7 @@ class OllamaRunner:
         model: str,
         model_manifest_sha256: str,
         runtime_version: str,
+        thinking_enabled: bool,
         timeout_seconds: float = 120.0,
         context_window: int | None = None,
         declared_environment: Mapping[str, str] | None = None,
@@ -1561,6 +1563,16 @@ class OllamaRunner:
         require_sha256(model_manifest_sha256, "model_manifest_sha256")
         if not runtime_version:
             raise EvidenceError("missing_runtime_version", "Ollama runtime version is required")
+        if type(thinking_enabled) is not bool:
+            raise EvidenceError(
+                "missing_thinking_mode",
+                "Ollama thinking mode must be an explicit boolean",
+            )
+        if thinking_enabled:
+            raise EvidenceError(
+                "unsupported_thinking_mode",
+                "the v3 first-study contract requires thinking to be disabled",
+            )
         if timeout_seconds <= 0:
             raise EvidenceError("invalid_timeout", str(timeout_seconds))
         if context_window is not None and context_window <= 0:
@@ -1568,7 +1580,6 @@ class OllamaRunner:
         self._endpoint = endpoint.rstrip("/")
         self._model = model
         self._timeout_seconds = timeout_seconds
-        self._identity_validated = False
         self._identity = ModelIdentity(
             adapter="ollama",
             endpoint=self._endpoint,
@@ -1589,6 +1600,7 @@ class OllamaRunner:
             json_mode="strict_json",
             options=options,
             temperature=0.0,
+            thinking_enabled=thinking_enabled,
             timeout_seconds=timeout_seconds,
         )
 
@@ -1646,7 +1658,6 @@ class OllamaRunner:
                 "model_manifest_digest_mismatch",
                 f"declared={self.identity.model_manifest_sha256} observed={observed_digest}",
             )
-        self._identity_validated = True
 
     def run(
         self,
@@ -1656,11 +1667,6 @@ class OllamaRunner:
         repeat_index: int,
     ) -> RunnerResult:
         del atlas, repeat_index
-        if not self._identity_validated:
-            raise EvidenceError(
-                "runner_identity_not_validated",
-                "Ollama identity must be validated before generation",
-            )
         instruction = _PROFILE_INSTRUCTIONS.get(profile)
         if instruction is None:
             raise EvidenceError("unknown_recorded_profile", profile)
@@ -1712,6 +1718,7 @@ class OllamaRunner:
                 "options": options,
                 "prompt": prompt,
                 "stream": False,
+                "think": self.configuration.thinking_enabled,
             }
         )
         http_request = urllib.request.Request(
@@ -1720,13 +1727,16 @@ class OllamaRunner:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
+        self.validate_identity()
         started = time.perf_counter()
         try:
             with _open_local_model_request(http_request, self._timeout_seconds) as response:
                 response_body = response.read()
         except (TimeoutError, urllib.error.URLError) as exc:
             raise EvidenceError("local_model_request_failed", str(exc)) from exc
-        latency_ms = (time.perf_counter() - started) * 1000.0
+        generation_finished = time.perf_counter()
+        self.validate_identity()
+        latency_ms = (generation_finished - started) * 1000.0
         try:
             response_value = require_object(
                 load_json_bytes(response_body, require_canonical=False),
