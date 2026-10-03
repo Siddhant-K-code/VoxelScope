@@ -2,11 +2,13 @@
 
 ## Prospective status and unchanged boundary
 
-Version 4 is an implementation-only, prospective intervention motivated by the
-post-hoc analysis of the closed v1 Qwen3 study. It is not an observed improvement,
-does not alter or reinterpret that study, and does not authorize a rerun. No real
-model was run or downloaded while implementing or validating v4. A new reviewed,
-prospectively frozen declaration is required before comparing v4 with the v1 result.
+Version 4 is a prospective intervention motivated by the post-hoc analysis of the
+closed v1 Qwen3 study. It is not an observed improvement and does not alter,
+reinterpret, or authorize a rerun of that study. No real model was run or downloaded
+while implementing or validating v4. The prospective v4 declaration is now frozen at
+SHA-256 `e838b2a09245d1684c3bc41e39d49d09b5ff700703929aa1e6fe21b5c90a4090`;
+it requires independent review and merge before a separately authorized execution.
+See [the v4 study runbook](evidence-communication-v4-study.md).
 
 The implementation and recorded synthetic fixture/replay benchmark remain
 non-clinical. Clinical use, diagnosis, prognosis, treatment, protein ranking,
@@ -227,17 +229,13 @@ execution.
 
 ## Remaining blockers before an observed v4 study
 
-1. Review and freeze a new prospective declaration; the v1 declaration cannot be
-   reused.
-2. Bind the declaration to the reviewed v4 code, fixture digest, atlas digest,
-   prompt digest, transformation, verifier, and exact measurement limitations.
-3. Review and freeze the already-installed model's full 64-character manifest digest
-   and exact localhost runtime identity in that new declaration. Read-only preflight
-   observed Ollama `0.35.1` and tag `qwen3:8b-q8_0` resolving twice to
-   `e56358ca25dd14db6853a9f68a92d717aaa6f0a94250a72d1a0f3d86a9f30130`;
-   these are future-declaration inputs only. This implementation PR does not freeze
-   or authorize that identity, and no generation request was made.
-4. Reconfirm that no real biomedical, patient, MRI, credential, token, or private
+1. Independently review and merge the prospective declaration without executing it.
+2. In a later fresh session, verify the merged declaration SHA-256 and run the
+   sanitized two-check localhost preflight again.
+3. Reconfirm that no real biomedical, patient, MRI, credential, token, or private
    path enters the run.
+4. Give one explicit operator authorization bound to the merged declaration and
+   consume the immutable attempt exactly once.
 5. Preserve all clinical, diagnosis, prognosis, treatment, ranking,
-   therapeutic-target, druggability, and real-data gates as **NO-GO**.
+   therapeutic-target, druggability, model-quality, production-safety, and real-data
+   gates as **NO-GO**.

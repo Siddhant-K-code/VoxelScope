@@ -845,10 +845,30 @@ def test_recorded_benchmark_replay_and_exact_metrics(tmp_path: Path) -> None:
         "numerator": 4,
         "value": 4 / 18,
     }
+    assert metrics["accepted_terminal_outcome_rate"] == {
+        "availability": "available",
+        "denominator": 18,
+        "numerator": 10,
+        "value": 10 / 18,
+    }
+    assert metrics["partially_excluded_terminal_outcome_rate"] == {
+        "availability": "available",
+        "denominator": 18,
+        "numerator": 0,
+        "value": 0.0,
+    }
+    assert metrics["refused_terminal_outcome_rate"] == {
+        "availability": "available",
+        "denominator": 18,
+        "numerator": 8,
+        "value": 8 / 18,
+    }
     assert metrics["evidence_citation_validity"]["value"] == 1.0
     assert metrics["replay_semantic_variance"]["value"] == 0.0
     assert metrics["verifier_counts"] == {
+        "accepted": 10,
         "accepted_or_partially_excluded": 10,
+        "partially_excluded": 0,
         "refused": 8,
         "total": 18,
     }
