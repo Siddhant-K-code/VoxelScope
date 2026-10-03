@@ -66,12 +66,20 @@ The model-owned response is only:
 The model does not return hashes other than the assigned skeleton selector, source
 IDs, requirement bindings, typed evidence fields, canonical gene or protein IDs,
 model identity, prompt identity, request identity, or source identity. The runner
-adds immutable outer custody identities in trusted code after parsing.
+adds immutable outer custody identities in trusted code after parsing. The
+model-visible prompt states the exact `entries`, `draft_text`, and `skeleton_id`
+envelope shape because Ollama's schema constrains generation but is not itself
+injected into the model prompt.
 
 For Ollama, top-level `format` is an explicit JSON Schema object, never generic
 `"json"`. The schema fixes the exact top-level object, sets
 `additionalProperties=false` at every object level, fixes the exact entry count,
-uses ordered `prefixItems`, and constrains each entry to one exact skeleton ID.
+uses ordinary object-valued `items`, and constrains `skeleton_id` to an `enum` of the
+exact allowed IDs. It intentionally does not use `prefixItems`, `items=false`, or
+per-position `const`, which are not a conservative llama.cpp grammar subset. The
+grammar enforces object shape, entry count, allowed IDs, field names, and text-length
+hints. Trusted parsing independently enforces the 1 to 500 Unicode-code-point text
+bound, exact task order, uniqueness, completeness, and absence of unknown IDs.
 Generation also uses temperature zero and top-level `think=false`. The persisted
 runner configuration records locality, JSON mode, options, context window, timeout,
 thinking mode, temperature, and declared-unverified environment settings.
@@ -80,7 +88,13 @@ The adapter permits only redirect-free, unauthenticated localhost HTTP. It obser
 the exact runtime version and full model manifest digest immediately before and
 after every generation. Transport failure, redirect, outer Ollama protocol drift,
 runtime drift, manifest drift, ambiguous tag resolution, or custody identity drift
-aborts the entire unpublished tree.
+aborts the entire unpublished tree. Ollama `v0.35.1`'s official
+[`GenerateResponse`](https://github.com/ollama/ollama/blob/v0.35.1/api/types.go)
+serializes `model` and `done` as non-optional fields, and its
+[non-streaming API example](https://github.com/ollama/ollama/blob/v0.35.1/docs/api.md#request-no-streaming)
+returns the requested model tag with `done: true`. The adapter therefore requires
+both fields, requires `model` to equal the declared tag, and requires `done` to be
+exactly `true`.
 
 ## Invalid outcome rule
 
@@ -91,6 +105,7 @@ frozen cases can continue:
 - a non-object envelope or non-array `entries`;
 - missing or additional object properties;
 - malformed task objects;
+- empty, overlong, or invalidly encoded draft text;
 - unknown skeleton IDs;
 - duplicated skeleton IDs;
 - omitted skeleton IDs;
@@ -196,6 +211,11 @@ refusal. Exact recorded metrics are:
 
 Latency, input tokens, output tokens, peak memory, and peak Metal memory are
 `unavailable`; they are not recorded as zero.
+
+The conservative-schema compatibility fix changes the v4 prompt identity and,
+therefore, parsed recorded-draft custody digests and enclosing fixture/receipt
+digests. It does not change skeleton semantics, verifier outcomes, canonical prose,
+or any aggregate numerator, denominator, or metric value.
 
 These synthetic results must not be compared with the closed v1 observed study as an
 improvement claim. A comparison requires a new declaration that freezes the v4

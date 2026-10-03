@@ -295,11 +295,25 @@ class DraftTask:
     draft_text: str
     skeleton_id: str
 
+    def __post_init__(self) -> None:
+        try:
+            self.draft_text.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise EvidenceError(
+                "invalid_draft_text_encoding",
+                "draft_text must be valid UTF-8 text",
+            ) from exc
+        if not 1 <= len(self.draft_text) <= 500:
+            raise EvidenceError(
+                "invalid_draft_text_length",
+                "draft_text must contain 1 to 500 Unicode code points",
+            )
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> DraftTask:
         value = strict_fields(data, {"draft_text", "skeleton_id"}, "DraftTask")
         return cls(
-            require_string(value["draft_text"], "draft_text"),
+            require_string(value["draft_text"], "draft_text", nonempty=False),
             require_string(value["skeleton_id"], "skeleton_id"),
         )
 

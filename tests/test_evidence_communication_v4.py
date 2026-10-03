@@ -17,12 +17,15 @@ from voxelscope.canonical import (
     sha256_bytes,
     write_json,
 )
+from voxelscope.evidence_benchmark_records import RunnerConfiguration
 from voxelscope.evidence_communication import replay_benchmark as replay_benchmark_v3
+from voxelscope.evidence_communication_records import ModelIdentity
 from voxelscope.evidence_communication_v4 import (
     DIRECTIONAL_SCOPE_TEXT,
     SOURCE_TARGET_BOUNDARY_TEXT,
     OllamaRunnerV4,
     RecordedDraftRunnerV4,
+    RunnerResultV4,
     _profile_prompt_identity_v4,
     _recorded_output,
     compile_recorded_fixture_v4,
@@ -35,6 +38,7 @@ from voxelscope.evidence_communication_v4 import (
     verify_draft_plan_v4,
 )
 from voxelscope.evidence_communication_v4_records import (
+    CommunicationRequestV4,
     DraftPlanEnvelopeV4,
     InvalidModelOutputV4,
 )
@@ -179,7 +183,9 @@ def _ollama_runner() -> OllamaRunnerV4:
 def _ollama_response(response: str, **extra: Any) -> bytes:
     return canonical_json_bytes(
         {
+            "done": True,
             "eval_count": 3,
+            "model": "installed-test-model",
             "prompt_eval_count": 5,
             "response": response,
             **extra,
@@ -286,15 +292,18 @@ def test_ollama_body_uses_exact_json_schema_object() -> None:
     assert schema["additionalProperties"] is False
     entries = schema["properties"]["entries"]
     assert entries["minItems"] == entries["maxItems"] == len(request.skeletons)
-    assert entries["items"] is False
-    assert [item["properties"]["skeleton_id"]["const"] for item in entries["prefixItems"]] == [
+    assert "prefixItems" not in entries
+    assert entries["items"]["additionalProperties"] is False
+    assert entries["items"]["properties"]["skeleton_id"]["enum"] == [
         item.skeleton_id for item in request.skeletons
     ]
-    assert all(item["additionalProperties"] is False for item in entries["prefixItems"])
     assert body["think"] is False
     assert body["options"]["temperature"] == 0.0
     assert "think" not in body["options"]
     prompt = body["prompt"]
+    assert '"entries"' in prompt
+    assert '"draft_text"' in prompt
+    assert '"skeleton_id"' in prompt
     assert request.canonical_gene_id not in prompt
     assert request.canonical_protein_id not in prompt
     assert all(item.requirement_id not in prompt for item in request.plan)
@@ -402,6 +411,97 @@ def test_malformed_model_shapes_are_invalid_outcomes(
     assert invalid.task_outcome.omitted_count == len(request.skeletons)
 
 
+class _InvalidDraftTextRunner:
+    def __init__(self, draft_text: str) -> None:
+        self._draft_text = draft_text
+        self._identity = ModelIdentity(
+            adapter="test-invalid-draft-text",
+            endpoint=None,
+            model="synthetic-test",
+            model_manifest_sha256=None,
+            runtime="pytest",
+            runtime_version="recorded",
+        )
+        self._configuration = RunnerConfiguration(
+            context_window=None,
+            declared_environment=(),
+            endpoint_locality="not_applicable",
+            json_mode="recorded_fixture",
+            options=(),
+            temperature=None,
+            thinking_enabled=None,
+            timeout_seconds=None,
+        )
+
+    @property
+    def identity(self) -> ModelIdentity:
+        return self._identity
+
+    @property
+    def configuration(self) -> RunnerConfiguration:
+        return self._configuration
+
+    def validate_identity(self) -> None:
+        return None
+
+    def run(
+        self,
+        request: CommunicationRequestV4,
+        profile: str,
+        repeat_index: int,
+    ) -> RunnerResultV4:
+        del profile, repeat_index
+        value = load_json_bytes_uncanonical(_recorded_output(request, "clean"))
+        entries = value["entries"]
+        assert isinstance(entries, list)
+        first = entries[0]
+        assert isinstance(first, dict)
+        first["draft_text"] = self._draft_text
+        envelope, invalid = parse_model_draft_plan(
+            request,
+            self.identity,
+            canonical_json_bytes(value),
+        )
+        return RunnerResultV4(
+            envelope=envelope,
+            input_tokens=None,
+            invalid_model_output=invalid,
+            latency_ms=None,
+            output_tokens=None,
+            peak_memory_mb=None,
+            peak_metal_memory_mb=None,
+        )
+
+
+@pytest.mark.parametrize("draft_text", ["", "x" * 501])
+def test_draft_text_bounds_are_digest_safe_and_replayable(
+    tmp_path: Path,
+    draft_text: str,
+) -> None:
+    atlas_path = _atlas_path(tmp_path)
+    output = tmp_path / f"invalid-length-{len(draft_text)}"
+    benchmark = run_benchmark_v4(
+        atlas_path,
+        V4_BENCHMARK_FIXTURE,
+        output,
+        _InvalidDraftTextRunner(draft_text),
+    )
+
+    assert benchmark["metrics"]["invalid_model_output_rate"]["value"] == 1.0
+    assert all(
+        item["invalid_model_output"]["error_code"] == "invalid_draft_text_length"
+        for item in benchmark["runs"]
+    )
+    assert (
+        replay_benchmark_v4(
+            atlas_path,
+            V4_BENCHMARK_FIXTURE,
+            output,
+        )
+        == benchmark
+    )
+
+
 @pytest.mark.parametrize(
     "field",
     [
@@ -505,6 +605,51 @@ def test_outer_protocol_and_transport_drift_abort(
             _ollama_runner(),
         )
     assert benchmark_transport.value.code == "local_model_request_failed"
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    ("mutation", "error_code"),
+    [
+        ("missing_done", "local_model_protocol_failed"),
+        ("false_done", "local_model_incomplete_response"),
+        ("missing_model", "local_model_protocol_failed"),
+        ("model_drift", "local_model_response_model_mismatch"),
+    ],
+)
+def test_ollama_completion_and_model_identity_drift_abort_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+    error_code: str,
+) -> None:
+    _, request = _request()
+    response_value = load_json_bytes_uncanonical(
+        _ollama_response(_recorded_output(request, "clean").decode("ascii"))
+    )
+    if mutation == "missing_done":
+        del response_value["done"]
+    elif mutation == "false_done":
+        response_value["done"] = False
+    elif mutation == "missing_model":
+        del response_value["model"]
+    else:
+        response_value["model"] = "different-model"
+    monkeypatch.setattr(
+        v4_module,
+        "_open_local_model_request",
+        _ollama_responder(canonical_json_bytes(response_value)),
+    )
+    output = tmp_path / mutation
+
+    with pytest.raises(EvidenceError) as caught:
+        run_benchmark_v4(
+            _atlas_path(tmp_path),
+            V4_BENCHMARK_FIXTURE,
+            output,
+            _ollama_runner(),
+        )
+    assert caught.value.code == error_code
     assert not output.exists()
 
 

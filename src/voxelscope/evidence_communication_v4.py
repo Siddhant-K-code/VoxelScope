@@ -99,10 +99,12 @@ SOURCE_TARGET_BOUNDARY_TEXT = (
 )
 PROMPT_ID_V4 = "voxelscope/evidence-communication-bounded-draft/v4"
 PROMPT_TEXT_V4 = (
-    "Return only the requested bounded draft-plan object. Emit exactly one short "
-    "untrusted drafting note for each skeleton ID in the supplied order. Do not copy "
-    "hashes, source IDs, requirement IDs, typed fields, canonical identifiers, values, "
-    "or clinical language. Trusted code supplies all evidence semantics and final prose."
+    'Return exactly one JSON object with the key "entries". "entries" must be an array '
+    'of objects with exactly the keys "draft_text" and "skeleton_id". Emit exactly one '
+    "short untrusted drafting note for each skeleton ID in the supplied order. Do not "
+    "copy hashes other than the assigned skeleton ID, source IDs, requirement IDs, typed "
+    "fields, canonical identifiers, values, or clinical language. Trusted code supplies "
+    "all evidence semantics and final prose."
 )
 PROMPT_IDENTITY_V4 = PromptIdentity(
     PROMPT_ID_V4,
@@ -345,32 +347,29 @@ def derive_communication_request_v4(
 
 def draft_plan_json_schema(request: CommunicationRequestV4) -> dict[str, Any]:
     """Return the exact per-request JSON Schema sent in Ollama's format field."""
-
-    def item_schema(skeleton_id: str) -> dict[str, Any]:
-        return {
-            "additionalProperties": False,
-            "properties": {
-                "draft_text": {
-                    "maxLength": 500,
-                    "minLength": 1,
-                    "type": "string",
-                },
-                "skeleton_id": {"const": skeleton_id, "type": "string"},
-            },
-            "required": ["draft_text", "skeleton_id"],
-            "type": "object",
-        }
-
     count = len(request.skeletons)
     return {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": False,
         "properties": {
             "entries": {
-                "items": False,
+                "items": {
+                    "additionalProperties": False,
+                    "properties": {
+                        "draft_text": {
+                            "maxLength": 500,
+                            "minLength": 1,
+                            "type": "string",
+                        },
+                        "skeleton_id": {
+                            "enum": [item.skeleton_id for item in request.skeletons],
+                            "type": "string",
+                        },
+                    },
+                    "required": ["draft_text", "skeleton_id"],
+                    "type": "object",
+                },
                 "maxItems": count,
                 "minItems": count,
-                "prefixItems": [item_schema(item.skeleton_id) for item in request.skeletons],
                 "type": "array",
             }
         },
@@ -1278,6 +1277,7 @@ class OllamaRunnerV4:
                 "Ollama response",
             )
             allowed = {
+                "_debug_info",
                 "context",
                 "created_at",
                 "done",
@@ -1285,18 +1285,43 @@ class OllamaRunnerV4:
                 "eval_count",
                 "eval_duration",
                 "load_duration",
+                "logprobs",
                 "model",
                 "peak_memory_mb",
                 "peak_metal_memory_mb",
                 "prompt_eval_count",
+                "prompt_eval_cached_count",
                 "prompt_eval_duration",
+                "remote_host",
+                "remote_model",
                 "response",
+                "thinking",
+                "tool_calls",
                 "total_duration",
             }
-            if "response" not in response_value or not set(response_value).issubset(allowed):
+            if not {"done", "model", "response"}.issubset(response_value) or not set(
+                response_value
+            ).issubset(allowed):
                 raise EvidenceError(
                     "local_model_protocol_failed",
                     "Ollama response fields differ",
+                )
+            done = response_value["done"]
+            if type(done) is not bool:
+                raise EvidenceError(
+                    "local_model_protocol_failed",
+                    "Ollama done must be a boolean",
+                )
+            if done is not True:
+                raise EvidenceError(
+                    "local_model_incomplete_response",
+                    "non-streaming Ollama response must have done=true",
+                )
+            response_model = require_string(response_value["model"], "model")
+            if response_model != self._model:
+                raise EvidenceError(
+                    "local_model_response_model_mismatch",
+                    f"declared={self._model} observed={response_model}",
                 )
             response_text = require_string(response_value["response"], "response")
             input_tokens = (
@@ -1323,7 +1348,11 @@ class OllamaRunnerV4:
                 else None
             )
         except EvidenceError as exc:
-            if exc.code == "local_model_protocol_failed":
+            if exc.code in {
+                "local_model_incomplete_response",
+                "local_model_protocol_failed",
+                "local_model_response_model_mismatch",
+            }:
                 raise
             raise EvidenceError("local_model_protocol_failed", exc.code) from exc
         envelope, invalid = parse_model_draft_plan(
