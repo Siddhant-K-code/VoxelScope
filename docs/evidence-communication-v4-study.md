@@ -1,6 +1,6 @@
-# Prospective v4 local-Qwen3 comparison study
+# v4 local-Qwen3 comparison study
 
-## Frozen status
+## Frozen declaration and observed status
 
 The prospective declaration is
 [`study-declaration.json`](../research/gbm-evidence-communication-qwen3-8b-q8-study-v4/study-declaration.json),
@@ -8,8 +8,14 @@ SHA-256
 `063b6055d430f14637d3dab05d1471cfc8e2fcf043b4030c633a956eff94a6c6`.
 Its no-clobber receipt is
 [`study-declaration-receipt.json`](../research/gbm-evidence-communication-qwen3-8b-q8-study-v4/study-declaration-receipt.json).
-This is a prospective declaration only. No v4 model request has been generated, no
-model or runtime has been downloaded or mutated, and no observed v4 result exists.
+This declaration was frozen prospectively and remains unchanged. After PR #20
+merged at commit `2bddf3355a88078a1346031a4209c818aa714c8a`, one fresh
+declaration-bound execution consumed the immutable attempt and completed all 18
+requests. No model or runtime was downloaded, pulled, created, removed, or changed.
+The bounded observed result is recorded in the
+[study README](../research/gbm-evidence-communication-qwen3-8b-q8-study-v4/README.md)
+and
+[`result-summary.json`](../research/gbm-evidence-communication-qwen3-8b-q8-study-v4/result-summary.json).
 
 The declaration is based on merged PR #19 commit
 `c66eca8f072ba23d74b59455f6f4074bfb758b08`, tree
@@ -106,9 +112,7 @@ unpublished, the attempt marker remains terminal, and neither rerun nor partial
 result publication is permitted. Successful publication is atomic, no-clobber,
 receipt-closed, and must pass immediate offline replay.
 
-Future execution is authorized only after independent review and merge of the
-declaration PR, followed by one explicit operator start in a fresh clean session
-bound to the merged declaration SHA-256:
+The single authorized execution used the exact declaration-bound command:
 
 ```bash
 uv run python -m voxelscope.evidence_communication_v4_cli benchmark \
@@ -122,7 +126,28 @@ uv run python -m voxelscope.evidence_communication_v4_cli benchmark \
   --authorize-declaration-sha256 063b6055d430f14637d3dab05d1471cfc8e2fcf043b4030c633a956eff94a6c6
 ```
 
-Do not run that command while this declaration PR is open.
+The attempt is consumed. Do not run this command again.
+
+## Observed result
+
+The frozen execution completed one attempt with exactly 18 generation requests,
+zero warmup requests, zero retries, zero selective reruns, and zero manual repairs.
+The immediate replay verified all 18 runs after the Ollama service was stopped.
+
+- accepted: `6 / 18`;
+- partially excluded: `0 / 18`;
+- refused: `12 / 18`;
+- task/skeleton coverage: `270 / 270`;
+- invalid model output: `0 / 18`;
+- emitted fact coverage: `42 / 158`;
+- emitted caveat coverage: `60 / 148`;
+- replay semantic variance: `3 / 9`.
+
+Only emitted fact and caveat coverage are directly side-by-side comparable with v3,
+and only descriptively. Every transformed and not-comparable field remains
+classified exactly as frozen in the declaration. The result does not establish
+causality, model quality, safety, generalization, statistical significance,
+superiority, clinical utility, production readiness, or biomedical validity.
 
 ## Claim boundary
 
