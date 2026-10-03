@@ -149,6 +149,12 @@ classified exactly as frozen in the declaration. The result does not establish
 causality, model quality, safety, generalization, statistical significance,
 superiority, clinical utility, production readiness, or biomedical validity.
 
+A separate
+[post-hoc analysis](../research/gbm-evidence-communication-qwen3-8b-q8-study-v4/post-hoc-analysis.md)
+was created only after the unchanged observed tree was committed. It uses verified
+artifacts and closed metadata without reading or publishing raw draft text, does not
+alter any observed outcome, and remains subject to the same claim boundary.
+
 ## Claim boundary
 
 Research-only synthetic evidence. Clinical use, diagnosis, prognosis, treatment,

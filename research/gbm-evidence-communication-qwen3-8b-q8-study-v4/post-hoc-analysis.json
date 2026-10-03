@@ -1,0 +1,104 @@
+{
+  "analysis_boundary": {
+    "generated_benchmark_modified": false,
+    "model_owned_draft_text_accessed": false,
+    "model_owned_draft_text_published": false,
+    "observed_metrics_modified": false,
+    "terminal_outcomes_modified": false,
+    "used_artifact_types": [
+      "benchmark_report",
+      "benchmark_index",
+      "benchmark_receipt",
+      "communication_request",
+      "verified_artifact"
+    ]
+  },
+  "analysis_performed_at": "2026-10-03T15:50:34Z",
+  "analysis_status": "post_observation_not_preregistered",
+  "closed_evidence": {
+    "benchmark_index": {
+      "path": "benchmark/index.json",
+      "sha256": "90f8dcd0002b52e4bdff89d00b0620b730d5ea7d5d5a137cdd3d7c1ff0ecadb3"
+    },
+    "benchmark_receipt": {
+      "path": "benchmark/receipt.json",
+      "sha256": "57347be8de8593a86e948a15c981890e747f684ac5a236b5a91305d712cae29d",
+      "terminal_state": "closed"
+    },
+    "benchmark_report": {
+      "path": "benchmark/benchmark.json",
+      "sha256": "86c1c86f62fda175dd121d84785bbb6ed5e11b216cb0383e9b7fcf0290fac409"
+    },
+    "benchmark_tree_sha1": "2322817495bdff1a3df3dff8dd1f7f0487f7e8ad",
+    "observed_commit": "4cc05da4fee06113fd2288b20b677aa43df2d637",
+    "study_tree_sha1": "5a062f9076e3ea41e881abac3682fdea089313c9"
+  },
+  "exclusions": {
+    "excluded_claim_type_counts": {
+      "availability": 29,
+      "directional_assessment": 6,
+      "entity_identity": 6,
+      "evidence_observation": 56,
+      "non_clinical_boundary": 5,
+      "source_target_evidence": 6
+    },
+    "excluded_requirement_binding_counts": {
+      "caveat": 46,
+      "fact": 74,
+      "total": 120
+    },
+    "reason_counts": {
+      "prohibited_causal_or_certainty_language": 9,
+      "prohibited_diagnostic_or_prognostic_language": 84,
+      "prohibited_treatment_language": 15
+    },
+    "run_count_with_exclusions": 12,
+    "total_excluded_skeleton_entries": 108,
+    "unique_excluded_skeleton_ids": 23
+  },
+  "headline": "All 18 bounded task sets were complete; 108 deterministic lexical exclusions across 12 runs produced refusal, and three repeat pairs differed in their verified semantic projection.",
+  "interpretation": {
+    "all_refusals_imply_hallucination": false,
+    "exclusions_prove_substantively_unsafe_text": false,
+    "model_quality_or_safety_conclusion": false,
+    "possible_text_level_causes_distinguished": false,
+    "reason": "verified artifacts retain exclusion categories and skeleton identities but this analysis did not inspect model-owned draft text"
+  },
+  "repeat_pair_exclusion_set_differences": [
+    {
+      "case_id": "cross-layer-disagreement",
+      "symmetric_difference_count": 3
+    },
+    {
+      "case_id": "prohibited-clinical-causal",
+      "symmetric_difference_count": 1
+    },
+    {
+      "case_id": "supported-agreement",
+      "symmetric_difference_count": 8
+    }
+  ],
+  "safety": {
+    "biomedical_or_clinical_claim": false,
+    "causal_claim": false,
+    "model_quality_or_safety_claim": false,
+    "rerun_proposed": false,
+    "statistical_significance_or_superiority_claim": false
+  },
+  "schema_version": "voxelscope/evidence-communication-post-hoc-analysis/v4",
+  "study_id": "gbm-evidence-communication-qwen3-8b-q8-study-v4",
+  "task_set_observations": {
+    "duplicate_skeleton_entries": 0,
+    "expected_skeleton_entries": 270,
+    "invalid_model_outputs": 0,
+    "matched_skeleton_entries": 270,
+    "omitted_skeleton_entries": 0,
+    "unknown_skeleton_entries": 0
+  },
+  "terminal_counts": {
+    "accepted": 6,
+    "partially_excluded": 0,
+    "refused": 12,
+    "total": 18
+  }
+}

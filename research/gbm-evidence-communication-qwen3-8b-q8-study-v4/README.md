@@ -130,3 +130,22 @@ canonical JSON, requests, skeletons, trusted expansion, verifier outcomes, seman
 digests, aggregate metrics, index, declaration binding, and receipt. The attempt is
 terminal and this study must never be rerun.
 
+## Post-hoc analysis
+
+After the unchanged observed result was frozen in commit
+`4cc05da4fee06113fd2288b20b677aa43df2d637`, a separate bounded analysis was
+derived from verified artifacts and closed metadata only. It is recorded in
+[`post-hoc-analysis.md`](post-hoc-analysis.md) and
+[`post-hoc-analysis.json`](post-hoc-analysis.json).
+
+The analysis did not read, reproduce, or publish raw draft text. It found 108
+deterministic lexical exclusions across the 12 refused runs: 84 diagnostic or
+prognostic-language exclusions, 15 treatment-language exclusions, and nine causal
+or certainty-language exclusions. All 18 outputs had complete, unique, ordered task
+sets, so no refusal arose from missing, duplicate, unknown, or malformed model
+output. Three repeat pairs had unequal verified semantic projections because their
+excluded skeleton sets differed.
+
+These post-hoc counts do not classify the underlying untrusted text as substantively
+unsafe, do not alter any observed artifact or compiler-defined metric, and do not
+support a model-quality, safety, or improvement claim.
