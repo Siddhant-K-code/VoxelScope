@@ -1,0 +1,210 @@
+{
+  "analysis_performed_at": "2026-10-03T09:37:18Z",
+  "analysis_status": "post_observation_not_preregistered",
+  "closed_evidence": {
+    "benchmark_index": {
+      "path": "benchmark/index.json",
+      "sha256": "6fb9bd4d228b2caa139724441b2b6778772c263389f927ffaaf09bd9b03e532b"
+    },
+    "benchmark_receipt": {
+      "path": "benchmark/receipt.json",
+      "sha256": "b454163e255cfe85d7412c8a90bcca31ce0840aa23675bb4b2e4ccf9174a61a6",
+      "terminal_state": "closed"
+    },
+    "benchmark_report": {
+      "path": "benchmark/benchmark.json",
+      "sha256": "66f26f41d8e7f4bf078e93d71aef577081a2fd5312e1cf1e8200d2d5c2fcf087"
+    }
+  },
+  "headline": "Highly repeatable, correctly cited output failed closed because of a systematic construction/verifier mismatch; 4/18 runs additionally violated the outer envelope type.",
+  "invalid_outputs": {
+    "interpretation": "unavailable_raw_text_intentionally_not_preserved",
+    "run_count": 4,
+    "runs": [
+      {
+        "case_id": "missing-modality",
+        "error_code": "invalid_json_type",
+        "output_sha256": "7b1032d646567d5ee81e0814c00a5848b87a331637ea209c88feb6b2503cd1b6",
+        "output_size_bytes": 9629,
+        "repeat_index": 0
+      },
+      {
+        "case_id": "missing-modality",
+        "error_code": "invalid_json_type",
+        "output_sha256": "7b1032d646567d5ee81e0814c00a5848b87a331637ea209c88feb6b2503cd1b6",
+        "output_size_bytes": 9629,
+        "repeat_index": 1
+      },
+      {
+        "case_id": "restricted-evidence",
+        "error_code": "invalid_json_type",
+        "output_sha256": "e768e6ff2b7d7b5a82ef48acc28b2ab18ea7d75a81aa3b0cfee291933d19d93a",
+        "output_size_bytes": 9773,
+        "repeat_index": 0
+      },
+      {
+        "case_id": "restricted-evidence",
+        "error_code": "invalid_json_type",
+        "output_sha256": "e768e6ff2b7d7b5a82ef48acc28b2ab18ea7d75a81aa3b0cfee291933d19d93a",
+        "output_size_bytes": 9773,
+        "repeat_index": 1
+      }
+    ]
+  },
+  "interpretation": {
+    "all_refusals_imply_hallucination": false,
+    "citation_validity": {
+      "denominator": 342,
+      "numerator": 342,
+      "value": 1.0
+    },
+    "failure_repeatability": "byte_identical_across_all_nine_repeat_pairs",
+    "nondeterminism_observed": false,
+    "terminal_states_changed": false
+  },
+  "parsed_envelopes": {
+    "aggregate": {
+      "excluded_claim_count": 56,
+      "proposed_claim_count": 238,
+      "verified_claim_count": 182
+    },
+    "exclusion_reasons": {
+      "prohibited_causal_or_certainty_language": 14,
+      "prohibited_target_or_druggability_language": 14,
+      "requirement_binding_mismatch": 28
+    },
+    "per_run": {
+      "excluded_claim_count": 4,
+      "proposed_claim_count": 17,
+      "verified_claim_count": 13
+    },
+    "run_count": 14
+  },
+  "proposed_next_intervention": {
+    "model_identity": {
+      "manifest_sha256": "e56358ca25dd14db6853a9f68a92d717aaa6f0a94250a72d1a0f3d86a9f30130",
+      "runtime_version": "0.35.1",
+      "tag": "qwen3:8b-q8_0"
+    },
+    "status": "proposed_not_executed",
+    "steps": [
+      "Require explicit Ollama JSON Schema object output.",
+      "Provide deterministic pre-grouped claim skeletons and binding IDs.",
+      "Generate canonical safe caveat prose in trusted code.",
+      "Freeze a new prospective declaration before testing the same pinned model and runtime."
+    ]
+  },
+  "repeat_pairs": [
+    {
+      "case_id": "cross-layer-disagreement",
+      "identity_kind": "committed_draft_sha256",
+      "model_outcome_byte_identical": true,
+      "value": "3099b3250fcdd9805c66b062fb922770f20b241a6e4dceb88290e3535941c8f3"
+    },
+    {
+      "case_id": "missing-modality",
+      "identity_kind": "raw_output_sha256_and_size",
+      "model_outcome_byte_identical": true,
+      "output_size_bytes": 9629,
+      "value": "7b1032d646567d5ee81e0814c00a5848b87a331637ea209c88feb6b2503cd1b6"
+    },
+    {
+      "case_id": "not-measured-versus-negative",
+      "identity_kind": "committed_draft_sha256",
+      "model_outcome_byte_identical": true,
+      "value": "3decbc43414cedf8a9dbeb9b33d7553d4420af256c9f1407f19dfc07453ae059"
+    },
+    {
+      "case_id": "prohibited-clinical-causal",
+      "identity_kind": "committed_draft_sha256",
+      "model_outcome_byte_identical": true,
+      "value": "4a3337892012fc24fec12c763ef8cfb6da478439b4fd995ee1412dd77d7f737a"
+    },
+    {
+      "case_id": "restricted-evidence",
+      "identity_kind": "raw_output_sha256_and_size",
+      "model_outcome_byte_identical": true,
+      "output_size_bytes": 9773,
+      "value": "e768e6ff2b7d7b5a82ef48acc28b2ab18ea7d75a81aa3b0cfee291933d19d93a"
+    },
+    {
+      "case_id": "source-reported-target-evidence",
+      "identity_kind": "committed_draft_sha256",
+      "model_outcome_byte_identical": true,
+      "value": "4734274240696eb9a94f8ed8893bc990d10fe29c9f427abcfccee6c6d41f5c45"
+    },
+    {
+      "case_id": "stale-evidence",
+      "identity_kind": "committed_draft_sha256",
+      "model_outcome_byte_identical": true,
+      "value": "1b3fc7d685a0e694cab1a4acf1355ffcdd87476486c774f9afc9d49a9084e0b7"
+    },
+    {
+      "case_id": "supported-agreement",
+      "identity_kind": "committed_draft_sha256",
+      "model_outcome_byte_identical": true,
+      "value": "180c239009820a8dc58b53fb53797b9e54bf191fe3aaacc7c598f1d51a629f2a"
+    },
+    {
+      "case_id": "unsupported-join",
+      "identity_kind": "committed_draft_sha256",
+      "model_outcome_byte_identical": true,
+      "value": "d8702d16abbb672641e1b48bc9cf88fa5a5ababb3670ac05ed56dd34bb5d0064"
+    }
+  ],
+  "root_causes": [
+    {
+      "classification": "compiler_model_interface_conflict",
+      "evidence": {
+        "model_behavior": "emitted_separate_claims_for_separate_plan_entries",
+        "prompt_instruction": "Produce one typed claim for every plan requirement. A single exact claim may bind multiple requirement IDs when the plan uses the same claim type and source IDs.",
+        "request_plan_shape": "separate_fact_and_caveat_entries",
+        "verifier_expected_bindings": [
+          [
+            "fact:directional_assessment",
+            "caveat:directional_scope"
+          ],
+          [
+            "fact:evidence:<target-evidence-id>",
+            "caveat:source_target_boundary"
+          ]
+        ]
+      },
+      "observed_exclusions_per_parsed_run": 2,
+      "reason": "requirement_binding_mismatch"
+    },
+    {
+      "classification": "verifier_interface_conflict_not_unsafe_model_behavior",
+      "evidence": {
+        "negation_semantics_considered": false,
+        "plan_requested_safe_negations": [
+          "Agreement or disagreement does not establish truth, causality, clinical utility, or therapeutic relevance.",
+          "Source-reported target evidence is not a VoxelScope target, ranking, or druggability claim."
+        ],
+        "substring_terms": [
+          " caus",
+          "druggab"
+        ]
+      },
+      "observed_exclusions_per_parsed_run": 2,
+      "reasons": [
+        "prohibited_causal_or_certainty_language",
+        "prohibited_target_or_druggability_language"
+      ]
+    }
+  ],
+  "safety": {
+    "clinical_claims_authorized": false,
+    "original_study_may_be_reinterpreted": false,
+    "original_study_may_be_rerun": false,
+    "real_biomedical_patient_or_mri_data_used": false
+  },
+  "schema_version": "voxelscope/evidence-communication-post-hoc-failure-analysis/v1",
+  "semantic_variance": {
+    "denominator": 9,
+    "numerator": 0,
+    "value": 0.0
+  },
+  "frozen_declaration_or_benchmark_modified": false,
+  "study_id": "gbm-evidence-communication-qwen3-8b-q8-study-v1"
+}

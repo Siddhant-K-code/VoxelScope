@@ -1,0 +1,144 @@
+{
+  "base": {
+    "commit": "0b83e57ac97a2fe5a8d133947caebb79df5c5d5f",
+    "commit_tree_sha1": "204a8a0da7ac6c781f8961c96b0fbd86ed137e2c",
+    "required_ancestor_check": "passed"
+  },
+  "benchmark": {
+    "case_count": 9,
+    "fixture": {
+      "path": "research/gbm-evidence-communication-benchmark-v3/benchmark-fixtures.json",
+      "sha256": "f461dc85f91a6bb5605de692641e66d89d688a61ec0cce37e16620820caee599"
+    },
+    "no_extra_warmup": true,
+    "no_selective_rerun": true,
+    "repeat_count": 2,
+    "repeat_policy": "fixture_defined",
+    "total_run_count": 18
+  },
+  "compiler": {
+    "json_mode": "strict_json",
+    "prompt_identity": "voxelscope/evidence-communication-json/v3",
+    "temperature": 0.0,
+    "transformation_identity": "voxelscope/evidence-communication-compiler/v3",
+    "verifier_identity": "voxelscope/evidence-communication-verifier/v3"
+  },
+  "declared_at": "2026-10-03T08:56:41Z",
+  "execution": {
+    "atlas_build_command": "uv run python -m voxelscope.gbm_atlas_cli build --manifest research/gbm-evidence-atlas-v1/source-manifest.json --output build/gbm-atlas",
+    "benchmark_command": "uv run python -m voxelscope.evidence_communication_cli benchmark --atlas build/gbm-atlas/atlas.json --fixtures research/gbm-evidence-communication-benchmark-v3/benchmark-fixtures.json --runner ollama --endpoint http://127.0.0.1:11434 --model qwen3:8b-q8_0 --model-digest e56358ca25dd14db6853a9f68a92d717aaa6f0a94250a72d1a0f3d86a9f30130 --runtime-version 0.35.1 --thinking disabled --timeout-seconds 300 --num-ctx 16384 --declared-environment OLLAMA_FLASH_ATTENTION=1 --declared-environment OLLAMA_KV_CACHE_TYPE=q8_0 --declared-environment HOST_MACHINE=MacBook-Pro --declared-environment HOST_CHIP=Apple-M5-Pro --declared-environment HOST_CPU_CORES=18 --declared-environment HOST_UNIFIED_MEMORY_GB=24 --declared-environment HOST_OS=macOS-27.0.1-26A434 --output research/gbm-evidence-communication-qwen3-8b-q8-study-v1/benchmark",
+    "benchmark_output": "research/gbm-evidence-communication-qwen3-8b-q8-study-v1/benchmark",
+    "declaration_must_exist_remotely_before_inference": true,
+    "replay_command": "uv run python -m voxelscope.evidence_communication_cli benchmark-replay --atlas build/gbm-atlas/atlas.json --fixtures research/gbm-evidence-communication-benchmark-v3/benchmark-fixtures.json --bundle research/gbm-evidence-communication-qwen3-8b-q8-study-v1/benchmark",
+    "retry_policy": "No retry after any transport, protocol, runtime, or model identity failure; no selective rerun of failed, refused, or malformed cases.",
+    "stop_policy": [
+      "Stop before inference if the declaration commit cannot be committed, pushed, and verified on the remote branch.",
+      "Stop without retry if transport, outer Ollama protocol, runtime identity, model tag resolution, or model manifest identity fails or drifts.",
+      "Stop publication if atlas, fixture, prompt, transformation, verifier, receipt closure, or accepted-sentence mappings differ from the declaration.",
+      "Treat model JSON or envelope noncompliance as a digest-safe invalid_model_output refusal and continue the frozen run sequence."
+    ]
+  },
+  "host": {
+    "chip": "Apple M5 Pro",
+    "cpu_cores": {
+      "efficiency": 12,
+      "performance": 6,
+      "total": 18
+    },
+    "machine": "MacBook Pro",
+    "observed_before_session_creation": true,
+    "operating_system": {
+      "build": "26A434",
+      "name": "macOS",
+      "version": "27.0.1"
+    },
+    "unified_memory_gb": 24
+  },
+  "inputs": {
+    "atlas": {
+      "artifacts": [
+        {
+          "path": "research/gbm-evidence-atlas-v1/evidence-items.json",
+          "sha256": "9f31d4d2899672e4aec3a803867ea0c50dd29bb172a69036e16ee3470e48e2bd"
+        },
+        {
+          "path": "research/gbm-evidence-atlas-v1/identifier-map.json",
+          "sha256": "2d6d32635f480529e3924ee76bd4d3b8971ef487ef1f21537c1851891399394a"
+        }
+      ],
+      "manifest_path": "research/gbm-evidence-atlas-v1/source-manifest.json",
+      "manifest_sha256": "edce8ad2a0748d1b95cf6c58ad9cce7c155e7d66fbb5d69985d8ed387fc3ba3f",
+      "synthetic": true
+    },
+    "largest_exact_benchmark_prompt_utf8_bytes": 11071,
+    "largest_recorded_16_claim_envelope_utf8_bytes": 9205,
+    "size_measurement_note": "Measured without inference; byte sizes are prospective context-window rationale, not model token measurements."
+  },
+  "model": {
+    "context_limit": 40960,
+    "embedding_length": 4096,
+    "family": "Qwen3",
+    "manifest_sha256": "e56358ca25dd14db6853a9f68a92d717aaa6f0a94250a72d1a0f3d86a9f30130",
+    "observed_before_declaration": true,
+    "parameter_count_label": "8.2B",
+    "quantization": "Q8_0",
+    "size_bytes": 8851089538,
+    "tag": "qwen3:8b-q8_0"
+  },
+  "results": {
+    "benchmark_receipt_sha256": null,
+    "benchmark_report_sha256": null,
+    "executed": false,
+    "measurements": {
+      "input_tokens": "pending_unobserved",
+      "latency_ms": "pending_unobserved",
+      "output_tokens": "pending_unobserved",
+      "peak_memory_mb": "pending_unobserved",
+      "peak_metal_memory_mb": "pending_unobserved"
+    },
+    "metrics": "pending_unobserved",
+    "per_run_states": "pending_unobserved",
+    "protocol_incident": "pending_unobserved",
+    "replay_status": "pending_unobserved",
+    "status": "prospectively_frozen_pending_execution"
+  },
+  "runner": {
+    "context_window": 16384,
+    "declared_environment": [
+      "OLLAMA_FLASH_ATTENTION=1",
+      "OLLAMA_KV_CACHE_TYPE=q8_0",
+      "HOST_MACHINE=MacBook-Pro",
+      "HOST_CHIP=Apple-M5-Pro",
+      "HOST_CPU_CORES=18",
+      "HOST_UNIFIED_MEMORY_GB=24",
+      "HOST_OS=macOS-27.0.1-26A434"
+    ],
+    "environment_attestation": "declared_unverified",
+    "environment_observation_note": "The Ollama service process environment was inspected before session creation and contained exactly the two declared OLLAMA settings. The API does not attest process environment, so the runner records every declared setting as declared_unverified.",
+    "endpoint": "http://127.0.0.1:11434",
+    "json_mode": "strict_json",
+    "model_download_permitted": false,
+    "name": "ollama",
+    "runtime_version": "0.35.1",
+    "seed": null,
+    "seed_policy": "intentionally_unset_to_measure_observed_local_runtime_semantic_variance_at_temperature_zero",
+    "temperature": 0.0,
+    "thinking": {
+      "cli_value": "disabled",
+      "top_level_ollama_value": false
+    },
+    "timeout_seconds": 300
+  },
+  "safety": {
+    "clinical_claims": "no_go",
+    "diagnosis_or_treatment_decisions": "no_go",
+    "druggability_claims": "no_go",
+    "patient_or_mri_data": "prohibited",
+    "protein_ranking": "no_go",
+    "real_biomedical_data": "prohibited",
+    "synthetic_non_clinical_only": true,
+    "therapeutic_target_claims": "no_go"
+  },
+  "schema_version": "voxelscope/evidence-communication-local-model-study-declaration/v1",
+  "study_id": "gbm-evidence-communication-qwen3-8b-q8-study-v1"
+}

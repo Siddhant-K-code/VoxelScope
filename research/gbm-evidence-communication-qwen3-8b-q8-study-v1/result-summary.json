@@ -1,0 +1,297 @@
+{
+  "benchmark": {
+    "execution_count": 1,
+    "local_model_downloaded": false,
+    "output_path": "research/gbm-evidence-communication-qwen3-8b-q8-study-v1/benchmark",
+    "run_count": 18,
+    "synthetic_only": true,
+    "terminal_state": "closed"
+  },
+  "custody": {
+    "benchmark_index": {
+      "path": "benchmark/index.json",
+      "sha256": "6fb9bd4d228b2caa139724441b2b6778772c263389f927ffaaf09bd9b03e532b"
+    },
+    "benchmark_receipt": {
+      "closed_file_count": 92,
+      "path": "benchmark/receipt.json",
+      "sha256": "b454163e255cfe85d7412c8a90bcca31ce0840aa23675bb4b2e4ccf9174a61a6",
+      "terminal_state": "closed"
+    },
+    "benchmark_report": {
+      "path": "benchmark/benchmark.json",
+      "sha256": "66f26f41d8e7f4bf078e93d71aef577081a2fd5312e1cf1e8200d2d5c2fcf087"
+    },
+    "published_file_count": 93
+  },
+  "declaration": {
+    "commit": "ee7642b3b96c0e9a81afca42827953e3ceb56257",
+    "commit_timestamp": "2026-10-03T14:27:42+05:30",
+    "path": "study-declaration.json",
+    "remote_verified_before_inference": true
+  },
+  "measurements": {
+    "input_tokens": {
+      "availability": "available",
+      "count": 18,
+      "maximum": 3069,
+      "mean": 2911.5555555555557,
+      "minimum": 2800
+    },
+    "latency_ms": {
+      "availability": "available",
+      "count": 18,
+      "maximum": 113156.43612499116,
+      "mean": 103526.30805777799,
+      "minimum": 96784.58245799993
+    },
+    "output_tokens": {
+      "availability": "available",
+      "count": 18,
+      "maximum": 2978,
+      "mean": 2918.1111111111113,
+      "minimum": 2802
+    },
+    "peak_memory_mb": {
+      "availability": "unavailable",
+      "reason": "runner_did_not_report_peak_memory"
+    },
+    "peak_metal_memory_mb": {
+      "availability": "unavailable",
+      "reason": "runner_did_not_report_peak_metal_memory"
+    }
+  },
+  "metrics": {
+    "emitted_caveat_coverage": {
+      "denominator": 148,
+      "numerator": 0,
+      "value": 0.0
+    },
+    "emitted_fact_coverage": {
+      "denominator": 158,
+      "numerator": 0,
+      "value": 0.0
+    },
+    "evidence_citation_validity": {
+      "denominator": 342,
+      "numerator": 342,
+      "value": 1.0
+    },
+    "invalid_model_output_rate": {
+      "denominator": 18,
+      "numerator": 4,
+      "value": 0.2222222222222222
+    },
+    "replay_semantic_variance": {
+      "denominator": 9,
+      "numerator": 0,
+      "value": 0.0
+    },
+    "unsupported_claim_rate": {
+      "denominator": 238,
+      "numerator": 56,
+      "value": 0.23529411764705882
+    },
+    "verified_draft_caveat_retention": {
+      "denominator": 148,
+      "numerator": 80,
+      "value": 0.5405405405405406
+    },
+    "verified_draft_fact_coverage": {
+      "denominator": 158,
+      "numerator": 102,
+      "value": 0.6455696202531646
+    },
+    "verifier_counts": {
+      "accepted_or_partially_excluded": 0,
+      "refused": 18,
+      "total": 18
+    }
+  },
+  "model": {
+    "manifest_sha256": "e56358ca25dd14db6853a9f68a92d717aaa6f0a94250a72d1a0f3d86a9f30130",
+    "runtime": "ollama",
+    "runtime_version": "0.35.1",
+    "tag": "qwen3:8b-q8_0"
+  },
+  "per_run_states": [
+    {
+      "artifact_sha256": "9ad78df83d5c4052d0de7570f8da448c2186c0cda20d93f347f997ddb0fae817",
+      "case_id": "supported-agreement",
+      "outcome": "parsed_envelope",
+      "repeat_index": 0,
+      "semantic_sha256": "b6c844239b712324d179d4f3b07efaaebdb8956ea8748db17565f651a4ccb27a",
+      "terminal_state": "refused"
+    },
+    {
+      "artifact_sha256": "9ad78df83d5c4052d0de7570f8da448c2186c0cda20d93f347f997ddb0fae817",
+      "case_id": "supported-agreement",
+      "outcome": "parsed_envelope",
+      "repeat_index": 1,
+      "semantic_sha256": "b6c844239b712324d179d4f3b07efaaebdb8956ea8748db17565f651a4ccb27a",
+      "terminal_state": "refused"
+    },
+    {
+      "artifact_sha256": "54b7e8ae933f0d9c2c2d62605e3f6d9e097b0d4264091f554912ba8e0d794c87",
+      "case_id": "cross-layer-disagreement",
+      "outcome": "parsed_envelope",
+      "repeat_index": 0,
+      "semantic_sha256": "e3398c4d60f392f82b574a9c4cbc8c318126b3cc2f3ab45359be3e1cc14bd47f",
+      "terminal_state": "refused"
+    },
+    {
+      "artifact_sha256": "54b7e8ae933f0d9c2c2d62605e3f6d9e097b0d4264091f554912ba8e0d794c87",
+      "case_id": "cross-layer-disagreement",
+      "outcome": "parsed_envelope",
+      "repeat_index": 1,
+      "semantic_sha256": "e3398c4d60f392f82b574a9c4cbc8c318126b3cc2f3ab45359be3e1cc14bd47f",
+      "terminal_state": "refused"
+    },
+    {
+      "artifact_sha256": "148fc3e353ec50de417bb7f6eb086baad3c04e05766bb19300d5fd3d6b670fba",
+      "case_id": "missing-modality",
+      "invalid_model_output": {
+        "error_code": "invalid_json_type",
+        "output_sha256": "7b1032d646567d5ee81e0814c00a5848b87a331637ea209c88feb6b2503cd1b6",
+        "output_size_bytes": 9629
+      },
+      "repeat_index": 0,
+      "semantic_sha256": "fc547a7657c2950480468461c33bf6f634f51126800983c31a3b1e3bef0cb72c",
+      "terminal_state": "refused"
+    },
+    {
+      "artifact_sha256": "148fc3e353ec50de417bb7f6eb086baad3c04e05766bb19300d5fd3d6b670fba",
+      "case_id": "missing-modality",
+      "invalid_model_output": {
+        "error_code": "invalid_json_type",
+        "output_sha256": "7b1032d646567d5ee81e0814c00a5848b87a331637ea209c88feb6b2503cd1b6",
+        "output_size_bytes": 9629
+      },
+      "repeat_index": 1,
+      "semantic_sha256": "fc547a7657c2950480468461c33bf6f634f51126800983c31a3b1e3bef0cb72c",
+      "terminal_state": "refused"
+    },
+    {
+      "artifact_sha256": "750d5800320d2784e1b72ae5f1451846791b347666424aaf4cd9da5bb8f56c1b",
+      "case_id": "unsupported-join",
+      "outcome": "parsed_envelope",
+      "repeat_index": 0,
+      "semantic_sha256": "b6c844239b712324d179d4f3b07efaaebdb8956ea8748db17565f651a4ccb27a",
+      "terminal_state": "refused"
+    },
+    {
+      "artifact_sha256": "750d5800320d2784e1b72ae5f1451846791b347666424aaf4cd9da5bb8f56c1b",
+      "case_id": "unsupported-join",
+      "outcome": "parsed_envelope",
+      "repeat_index": 1,
+      "semantic_sha256": "b6c844239b712324d179d4f3b07efaaebdb8956ea8748db17565f651a4ccb27a",
+      "terminal_state": "refused"
+    },
+    {
+      "artifact_sha256": "21466ec5a9a72a1309cdea495035e8081d3d3b949e699e92481e1cce3521e0e8",
+      "case_id": "stale-evidence",
+      "outcome": "parsed_envelope",
+      "repeat_index": 0,
+      "semantic_sha256": "e3398c4d60f392f82b574a9c4cbc8c318126b3cc2f3ab45359be3e1cc14bd47f",
+      "terminal_state": "refused"
+    },
+    {
+      "artifact_sha256": "21466ec5a9a72a1309cdea495035e8081d3d3b949e699e92481e1cce3521e0e8",
+      "case_id": "stale-evidence",
+      "outcome": "parsed_envelope",
+      "repeat_index": 1,
+      "semantic_sha256": "e3398c4d60f392f82b574a9c4cbc8c318126b3cc2f3ab45359be3e1cc14bd47f",
+      "terminal_state": "refused"
+    },
+    {
+      "artifact_sha256": "0eacdf30bb5216b33035e3de51c2b5abc038255b718cdbce7303ec426a09d466",
+      "case_id": "restricted-evidence",
+      "invalid_model_output": {
+        "error_code": "invalid_json_type",
+        "output_sha256": "e768e6ff2b7d7b5a82ef48acc28b2ab18ea7d75a81aa3b0cfee291933d19d93a",
+        "output_size_bytes": 9773
+      },
+      "repeat_index": 0,
+      "semantic_sha256": "fc547a7657c2950480468461c33bf6f634f51126800983c31a3b1e3bef0cb72c",
+      "terminal_state": "refused"
+    },
+    {
+      "artifact_sha256": "0eacdf30bb5216b33035e3de51c2b5abc038255b718cdbce7303ec426a09d466",
+      "case_id": "restricted-evidence",
+      "invalid_model_output": {
+        "error_code": "invalid_json_type",
+        "output_sha256": "e768e6ff2b7d7b5a82ef48acc28b2ab18ea7d75a81aa3b0cfee291933d19d93a",
+        "output_size_bytes": 9773
+      },
+      "repeat_index": 1,
+      "semantic_sha256": "fc547a7657c2950480468461c33bf6f634f51126800983c31a3b1e3bef0cb72c",
+      "terminal_state": "refused"
+    },
+    {
+      "artifact_sha256": "c3aa9a53c6cd3d53221b1a6922fafddfb3dd3b33b1b2936a1e99e6cc78e60faa",
+      "case_id": "not-measured-versus-negative",
+      "outcome": "parsed_envelope",
+      "repeat_index": 0,
+      "semantic_sha256": "b6c844239b712324d179d4f3b07efaaebdb8956ea8748db17565f651a4ccb27a",
+      "terminal_state": "refused"
+    },
+    {
+      "artifact_sha256": "c3aa9a53c6cd3d53221b1a6922fafddfb3dd3b33b1b2936a1e99e6cc78e60faa",
+      "case_id": "not-measured-versus-negative",
+      "outcome": "parsed_envelope",
+      "repeat_index": 1,
+      "semantic_sha256": "b6c844239b712324d179d4f3b07efaaebdb8956ea8748db17565f651a4ccb27a",
+      "terminal_state": "refused"
+    },
+    {
+      "artifact_sha256": "4f3e598d9b980371cb32fe3693955d58c912e009b9ecd3bbace6877a55ca042f",
+      "case_id": "source-reported-target-evidence",
+      "outcome": "parsed_envelope",
+      "repeat_index": 0,
+      "semantic_sha256": "e3398c4d60f392f82b574a9c4cbc8c318126b3cc2f3ab45359be3e1cc14bd47f",
+      "terminal_state": "refused"
+    },
+    {
+      "artifact_sha256": "4f3e598d9b980371cb32fe3693955d58c912e009b9ecd3bbace6877a55ca042f",
+      "case_id": "source-reported-target-evidence",
+      "outcome": "parsed_envelope",
+      "repeat_index": 1,
+      "semantic_sha256": "e3398c4d60f392f82b574a9c4cbc8c318126b3cc2f3ab45359be3e1cc14bd47f",
+      "terminal_state": "refused"
+    },
+    {
+      "artifact_sha256": "49749da0d0e25af762fcfcd665798d27971b10ff9887987b58cfba98430e026a",
+      "case_id": "prohibited-clinical-causal",
+      "outcome": "parsed_envelope",
+      "repeat_index": 0,
+      "semantic_sha256": "e3398c4d60f392f82b574a9c4cbc8c318126b3cc2f3ab45359be3e1cc14bd47f",
+      "terminal_state": "refused"
+    },
+    {
+      "artifact_sha256": "49749da0d0e25af762fcfcd665798d27971b10ff9887987b58cfba98430e026a",
+      "case_id": "prohibited-clinical-causal",
+      "outcome": "parsed_envelope",
+      "repeat_index": 1,
+      "semantic_sha256": "e3398c4d60f392f82b574a9c4cbc8c318126b3cc2f3ab45359be3e1cc14bd47f",
+      "terminal_state": "refused"
+    }
+  ],
+  "protocol_incident": null,
+  "replay": {
+    "accepted_or_partially_excluded": 0,
+    "refused": 18,
+    "run_count": 18,
+    "status": "verified"
+  },
+  "safety": {
+    "clinical_claims": "no_go",
+    "diagnosis_or_treatment_decisions": "no_go",
+    "druggability_claims": "no_go",
+    "protein_ranking": "no_go",
+    "real_biomedical_patient_or_mri_data_used": false,
+    "synthetic_non_clinical_only": true,
+    "therapeutic_target_claims": "no_go"
+  },
+  "schema_version": "voxelscope/evidence-communication-local-model-study-result/v1",
+  "study_id": "gbm-evidence-communication-qwen3-8b-q8-study-v1"
+}
