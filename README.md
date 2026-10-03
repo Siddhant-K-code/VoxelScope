@@ -253,9 +253,12 @@ derives stable, pre-grouped claim skeletons and limits model output to one skele
 ID plus untrusted draft text per task. Trusted code supplies all identities, typed
 fields, requirement bindings, citations, safety copy, verified claims, and canonical
 prose. Its nine-case, two-repeat recorded synthetic fixture and offline replay
-produce deterministic contract-test values, not observed model evidence or an
-observed improvement. No real model was run or downloaded, and a new reviewed
-declaration is required before any comparison with the closed v1 study.
+produce deterministic contract-test values, not observed model evidence. The
+[single observed v4 Qwen3 study](research/gbm-evidence-communication-qwen3-8b-q8-study-v4/README.md)
+was later executed from its merged prospective declaration exactly once, with no
+model download or retry. Its bounded results do not establish model improvement,
+safety, causality, generalization, significance, superiority, clinical utility,
+production readiness, or biomedical validity.
 
 The
 [first observed Qwen3 8B Q8_0 local-model study](research/gbm-evidence-communication-qwen3-8b-q8-study-v1/README.md)

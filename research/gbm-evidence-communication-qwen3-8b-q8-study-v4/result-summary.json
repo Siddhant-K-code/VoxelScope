@@ -1,0 +1,425 @@
+{
+  "benchmark": {
+    "attempt_count": 1,
+    "generation_request_count": 18,
+    "local_model_downloaded": false,
+    "manual_repair_count": 0,
+    "output_path": "research/gbm-evidence-communication-qwen3-8b-q8-study-v4/benchmark",
+    "retry_request_count": 0,
+    "run_count": 18,
+    "selective_rerun_count": 0,
+    "synthetic_only": true,
+    "terminal_state": "closed",
+    "warmup_request_count": 0
+  },
+  "code_identity": {
+    "declaration_merge_commit": "2bddf3355a88078a1346031a4209c818aa714c8a",
+    "declaration_merge_tree_sha1": "b18ba64b2701019ae137abc831a2d7e7e0ef1f7e",
+    "implementation_commit": "c66eca8f072ba23d74b59455f6f4074bfb758b08",
+    "implementation_head": "e11ecb9c701641e53ff44340cf6058b128177fd1",
+    "implementation_tree_sha1": "f8a68afc0bb15f06f39870d15bed47edeca0ac37",
+    "v3_merge_commit": "936549dcbf8c563cdef896bdb442a7629dcd260d",
+    "v3_study_tree_sha1": "7e5fb406d7216868e1491e5ae9420b17c9242533"
+  },
+  "comparator": {
+    "directly_comparable_descriptive_only": {
+      "emitted_caveat_coverage": {
+        "v3": {
+          "denominator": 148,
+          "numerator": 0,
+          "value": 0.0
+        },
+        "v4": {
+          "denominator": 148,
+          "numerator": 60,
+          "value": 0.40540540540540543
+        }
+      },
+      "emitted_fact_coverage": {
+        "v3": {
+          "denominator": 158,
+          "numerator": 0,
+          "value": 0.0
+        },
+        "v4": {
+          "denominator": 158,
+          "numerator": 42,
+          "value": 0.26582278481012656
+        }
+      }
+    },
+    "not_comparable": [
+      "task_skeleton_coverage",
+      "unknown_task_rate",
+      "duplicate_task_rate",
+      "omitted_task_rate",
+      "unsupported_claim_rate",
+      "evidence_citation_validity",
+      "peak_memory_mb",
+      "peak_metal_memory_mb"
+    ],
+    "policy": "descriptive_only_no_causal_model_quality_safety_generalization_significance_or_superiority_claim",
+    "transformed_not_direct_improvement": [
+      "invalid_model_output_rate",
+      "replay_semantic_variance",
+      "verified_draft_fact_coverage",
+      "verified_draft_caveat_retention",
+      "accepted_terminal_outcome_rate",
+      "partially_excluded_terminal_outcome_rate",
+      "refused_terminal_outcome_rate",
+      "latency_ms",
+      "input_tokens",
+      "output_tokens"
+    ],
+    "v3_study_id": "gbm-evidence-communication-qwen3-8b-q8-study-v1"
+  },
+  "custody": {
+    "attempt": {
+      "path": "attempt.json",
+      "sha256": "577ae65e77a4016361f9a709f21219acdd4e4612911635f338df6c3bf9d5abf4",
+      "terminal_state": "consumed_on_start"
+    },
+    "benchmark_index": {
+      "path": "benchmark/index.json",
+      "sha256": "90f8dcd0002b52e4bdff89d00b0620b730d5ea7d5d5a137cdd3d7c1ff0ecadb3"
+    },
+    "benchmark_receipt": {
+      "closed_file_count": 93,
+      "path": "benchmark/receipt.json",
+      "sha256": "57347be8de8593a86e948a15c981890e747f684ac5a236b5a91305d712cae29d",
+      "terminal_state": "closed"
+    },
+    "benchmark_report": {
+      "path": "benchmark/benchmark.json",
+      "sha256": "86c1c86f62fda175dd121d84785bbb6ed5e11b216cb0383e9b7fcf0290fac409"
+    },
+    "published_file_count": 94,
+    "study_binding": {
+      "path": "benchmark/study-binding.json",
+      "sha256": "77c20a37cd327a6e5f8f269e51cf3b9cfc50666623c3c2214decd36c6c0658de"
+    }
+  },
+  "declaration": {
+    "generation_requests_before_execution": 0,
+    "merge_commit": "2bddf3355a88078a1346031a4209c818aa714c8a",
+    "path": "study-declaration.json",
+    "receipt_path": "study-declaration-receipt.json",
+    "sha256": "063b6055d430f14637d3dab05d1471cfc8e2fcf043b4030c633a956eff94a6c6",
+    "source_count": 15,
+    "status": "verified_unchanged_before_execution"
+  },
+  "endpoint_results": {
+    "accepted_terminal_outcome_rate": {
+      "availability": "available",
+      "denominator": 18,
+      "numerator": 6,
+      "value": 0.3333333333333333
+    },
+    "duplicate_task_rate": {
+      "availability": "available",
+      "denominator": 270,
+      "numerator": 0,
+      "value": 0.0
+    },
+    "emitted_caveat_coverage": {
+      "availability": "available",
+      "denominator": 148,
+      "numerator": 60,
+      "value": 0.40540540540540543
+    },
+    "emitted_fact_coverage": {
+      "availability": "available",
+      "denominator": 158,
+      "numerator": 42,
+      "value": 0.26582278481012656
+    },
+    "evidence_citation_validity": {
+      "availability": "available",
+      "denominator": 192,
+      "numerator": 192,
+      "value": 1.0
+    },
+    "input_tokens": {
+      "availability": "available",
+      "count": 18,
+      "maximum": 1432,
+      "mean": 1424.3333333333333,
+      "minimum": 1417
+    },
+    "invalid_model_output_rate": {
+      "availability": "available",
+      "denominator": 18,
+      "numerator": 0,
+      "value": 0.0
+    },
+    "latency_ms": {
+      "availability": "available",
+      "count": 18,
+      "maximum": 50496.15258400445,
+      "mean": 46526.308546279324,
+      "minimum": 41521.08416600095
+    },
+    "omitted_task_rate": {
+      "availability": "available",
+      "denominator": 270,
+      "numerator": 0,
+      "value": 0.0
+    },
+    "output_tokens": {
+      "availability": "available",
+      "count": 18,
+      "maximum": 1515,
+      "mean": 1389.111111111111,
+      "minimum": 1260
+    },
+    "partially_excluded_terminal_outcome_rate": {
+      "availability": "available",
+      "denominator": 18,
+      "numerator": 0,
+      "value": 0.0
+    },
+    "peak_memory_mb": {
+      "availability": "unavailable",
+      "reason": "runner_did_not_report_peak_memory"
+    },
+    "peak_metal_memory_mb": {
+      "availability": "unavailable",
+      "reason": "runner_did_not_report_peak_metal_memory"
+    },
+    "refused_terminal_outcome_rate": {
+      "availability": "available",
+      "denominator": 18,
+      "numerator": 12,
+      "value": 0.6666666666666666
+    },
+    "replay_semantic_variance": {
+      "availability": "available",
+      "denominator": 9,
+      "numerator": 3,
+      "value": 0.3333333333333333
+    },
+    "task_skeleton_coverage": {
+      "availability": "available",
+      "denominator": 270,
+      "numerator": 270,
+      "value": 1.0
+    },
+    "unknown_task_rate": {
+      "availability": "available",
+      "denominator": 270,
+      "numerator": 0,
+      "value": 0.0
+    },
+    "unsupported_claim_rate": {
+      "availability": "available",
+      "denominator": 270,
+      "numerator": 108,
+      "value": 0.4
+    },
+    "verified_draft_caveat_retention": {
+      "availability": "available",
+      "denominator": 148,
+      "numerator": 102,
+      "value": 0.6891891891891891
+    },
+    "verified_draft_fact_coverage": {
+      "availability": "available",
+      "denominator": 158,
+      "numerator": 84,
+      "value": 0.5316455696202531
+    }
+  },
+  "identity_checks": {
+    "execution": {
+      "immediately_after_generation": 18,
+      "immediately_before_generation": 18,
+      "study_start": 1,
+      "total_identity_captures": 37
+    },
+    "matched_fields": [
+      "ollama_runtime_version",
+      "unique_local_tag_resolution",
+      "full_model_manifest_sha256",
+      "localhost_only_transport",
+      "response_done_true",
+      "response_model_tag",
+      "thinking_disabled"
+    ],
+    "preflight": {
+      "generation_requests": 0,
+      "identity_captures": 2,
+      "metadata_requests": [
+        "GET /api/version",
+        "GET /api/tags",
+        "GET /api/version",
+        "GET /api/tags"
+      ],
+      "status": "verified"
+    },
+    "status": "all_matched"
+  },
+  "model": {
+    "manifest_sha256": "e56358ca25dd14db6853a9f68a92d717aaa6f0a94250a72d1a0f3d86a9f30130",
+    "runtime": "ollama",
+    "runtime_version": "0.35.1",
+    "tag": "qwen3:8b-q8_0"
+  },
+  "per_run_states": [
+    {
+      "case_id": "supported-agreement",
+      "exclusion_count": 2,
+      "repeat_index": 0,
+      "semantic_sha256": "538578aeeccf0c1ffd791ca7aee4312249cb86c58893ce5a41886c473ecf8b7e",
+      "terminal_state": "refused"
+    },
+    {
+      "case_id": "supported-agreement",
+      "exclusion_count": 6,
+      "repeat_index": 1,
+      "semantic_sha256": "8b1cca075fdffcc15f265f6007c836a6ba27fe36152ce4e81407d2a0b34e7a58",
+      "terminal_state": "refused"
+    },
+    {
+      "case_id": "cross-layer-disagreement",
+      "exclusion_count": 13,
+      "repeat_index": 0,
+      "semantic_sha256": "d64398a34abc29288a279885d12f3b106bd939eddcacfcc5ad56a2f4720003b2",
+      "terminal_state": "refused"
+    },
+    {
+      "case_id": "cross-layer-disagreement",
+      "exclusion_count": 14,
+      "repeat_index": 1,
+      "semantic_sha256": "2044271fb7c481f9e2437c7fbdfce4bb4db7a106cf076850328e879457d05b3f",
+      "terminal_state": "refused"
+    },
+    {
+      "case_id": "missing-modality",
+      "exclusion_count": 6,
+      "repeat_index": 0,
+      "semantic_sha256": "8b1cca075fdffcc15f265f6007c836a6ba27fe36152ce4e81407d2a0b34e7a58",
+      "terminal_state": "refused"
+    },
+    {
+      "case_id": "missing-modality",
+      "exclusion_count": 6,
+      "repeat_index": 1,
+      "semantic_sha256": "8b1cca075fdffcc15f265f6007c836a6ba27fe36152ce4e81407d2a0b34e7a58",
+      "terminal_state": "refused"
+    },
+    {
+      "case_id": "unsupported-join",
+      "exclusion_count": 0,
+      "repeat_index": 0,
+      "semantic_sha256": "9e08f0ff50e3ffb3e54bbc4a191ef426f78c733238cd8d7ae36867171e2b5b52",
+      "terminal_state": "accepted"
+    },
+    {
+      "case_id": "unsupported-join",
+      "exclusion_count": 0,
+      "repeat_index": 1,
+      "semantic_sha256": "9e08f0ff50e3ffb3e54bbc4a191ef426f78c733238cd8d7ae36867171e2b5b52",
+      "terminal_state": "accepted"
+    },
+    {
+      "case_id": "stale-evidence",
+      "exclusion_count": 14,
+      "repeat_index": 0,
+      "semantic_sha256": "2044271fb7c481f9e2437c7fbdfce4bb4db7a106cf076850328e879457d05b3f",
+      "terminal_state": "refused"
+    },
+    {
+      "case_id": "stale-evidence",
+      "exclusion_count": 14,
+      "repeat_index": 1,
+      "semantic_sha256": "2044271fb7c481f9e2437c7fbdfce4bb4db7a106cf076850328e879457d05b3f",
+      "terminal_state": "refused"
+    },
+    {
+      "case_id": "restricted-evidence",
+      "exclusion_count": 0,
+      "repeat_index": 0,
+      "semantic_sha256": "9e08f0ff50e3ffb3e54bbc4a191ef426f78c733238cd8d7ae36867171e2b5b52",
+      "terminal_state": "accepted"
+    },
+    {
+      "case_id": "restricted-evidence",
+      "exclusion_count": 0,
+      "repeat_index": 1,
+      "semantic_sha256": "9e08f0ff50e3ffb3e54bbc4a191ef426f78c733238cd8d7ae36867171e2b5b52",
+      "terminal_state": "accepted"
+    },
+    {
+      "case_id": "not-measured-versus-negative",
+      "exclusion_count": 0,
+      "repeat_index": 0,
+      "semantic_sha256": "9e08f0ff50e3ffb3e54bbc4a191ef426f78c733238cd8d7ae36867171e2b5b52",
+      "terminal_state": "accepted"
+    },
+    {
+      "case_id": "not-measured-versus-negative",
+      "exclusion_count": 0,
+      "repeat_index": 1,
+      "semantic_sha256": "9e08f0ff50e3ffb3e54bbc4a191ef426f78c733238cd8d7ae36867171e2b5b52",
+      "terminal_state": "accepted"
+    },
+    {
+      "case_id": "source-reported-target-evidence",
+      "exclusion_count": 14,
+      "repeat_index": 0,
+      "semantic_sha256": "2044271fb7c481f9e2437c7fbdfce4bb4db7a106cf076850328e879457d05b3f",
+      "terminal_state": "refused"
+    },
+    {
+      "case_id": "source-reported-target-evidence",
+      "exclusion_count": 14,
+      "repeat_index": 1,
+      "semantic_sha256": "2044271fb7c481f9e2437c7fbdfce4bb4db7a106cf076850328e879457d05b3f",
+      "terminal_state": "refused"
+    },
+    {
+      "case_id": "prohibited-clinical-causal",
+      "exclusion_count": 2,
+      "repeat_index": 0,
+      "semantic_sha256": "01681c77fd0b9d547826c44eb501d5a3c98341cd8d5fb785c99a26dcd0b5b19c",
+      "terminal_state": "refused"
+    },
+    {
+      "case_id": "prohibited-clinical-causal",
+      "exclusion_count": 3,
+      "repeat_index": 1,
+      "semantic_sha256": "b0308a6acc90f821357eda302e410ac9fc6700bcf2e0b6667c269b1463751c43",
+      "terminal_state": "refused"
+    }
+  ],
+  "replay": {
+    "accepted": 6,
+    "model_service_stopped_before_replay": true,
+    "partially_excluded": 0,
+    "refused": 12,
+    "run_count": 18,
+    "status": "verified_offline"
+  },
+  "result_recorded_at": "2026-10-03T15:50:34Z",
+  "safety": {
+    "biomedical_validity_claim": false,
+    "causal_claim": false,
+    "clinical_or_production_claim": false,
+    "credentials_or_private_paths_used": false,
+    "model_files_downloaded_pulled_created_or_removed": false,
+    "model_quality_or_safety_improvement_claim": false,
+    "private_or_biomedical_data_used": false,
+    "real_biomedical_patient_or_mri_data_used": false,
+    "statistical_significance_claim": false,
+    "synthetic_non_clinical_only": true
+  },
+  "schema_version": "voxelscope/evidence-communication-local-model-study-result/v4",
+  "study_id": "gbm-evidence-communication-qwen3-8b-q8-study-v4",
+  "terminal_counts": {
+    "accepted": 6,
+    "accepted_or_partially_excluded": 6,
+    "partially_excluded": 0,
+    "refused": 12,
+    "total": 18
+  }
+}
