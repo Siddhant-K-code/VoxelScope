@@ -1,4 +1,4 @@
-# Evidence communication compiler v2
+# Evidence communication compiler v3
 
 ## Status and boundary
 
@@ -57,17 +57,21 @@ machine-readable and must be displayed by a consumer.
 
 | Schema | Purpose |
 |---|---|
-| `voxelscope/evidence-communication-request/v2` | Binds the request, source identities, prompt, verifier, required evidence, warnings, and complete fact and caveat plan |
-| `voxelscope/evidence-communication-model-draft/v2` | Carries model and runtime identity plus untrusted typed, source-cited proposed claims and draft text |
-| `voxelscope/verified-evidence-communication/v2` | Carries verified typed claims without raw model text, canonical sentences, exclusions, refusal reasons, separate draft and emitted coverage, warnings, and terminal state |
-| `voxelscope/evidence-communication-receipt/v2` | Binds request, parsed draft or digest-safe invalid-output evidence, artifact, source, prompt, model, transformation, verifier, exclusions, warnings, and closed state |
-| `voxelscope/evidence-communication-benchmark-fixture/v2` | Freezes adversarial cases, repeat counts, terminal states, and recorded custody digests |
-| `voxelscope/evidence-communication-benchmark/v2` | Carries per-run custody and semantic digests, separate coverage metrics, invalid-output outcomes, measurements, and aggregate metrics |
+| `voxelscope/evidence-communication-request/v3` | Binds the request, source identities, prompt, verifier, required evidence, warnings, and complete fact and caveat plan |
+| `voxelscope/evidence-communication-model-draft/v3` | Carries immutable model-manifest and exact runtime identity plus untrusted typed, source-cited proposed claims and draft text |
+| `voxelscope/verified-evidence-communication/v3` | Carries verified typed claims without raw model text, canonical sentences, exclusions, refusal reasons, separate draft and emitted coverage, warnings, and terminal state |
+| `voxelscope/evidence-communication-receipt/v3` | Binds request, parsed draft or digest-safe invalid-output evidence, artifact, source, prompt, model, transformation, verifier, exclusions, warnings, and closed state |
+| `voxelscope/evidence-communication-benchmark-fixture/v3` | Freezes adversarial cases, repeat counts, terminal states, and recorded custody digests |
+| `voxelscope/evidence-communication-benchmark/v3` | Carries per-run custody and semantic digests, separate coverage metrics, invalid-output outcomes, measurements, runner configuration, and aggregate metrics |
+| `voxelscope/evidence-communication-benchmark-index/v3` | Enumerates every expected run path and every request, draft or invalid-output record, verified artifact, communication receipt, and measurement digest |
+| `voxelscope/evidence-communication-runner-measurement/v3` | Records per-run latency, token, memory, and Metal measurements as measured values or explicit unavailable states |
+| `voxelscope/evidence-communication-invalid-output/v3` | Preserves only the model-output parse/schema error code, byte count, SHA-256, request identity, and immutable runner identity |
+| `voxelscope/evidence-communication-benchmark-receipt/v3` | Closes the aggregate report, canonical index, and every indexed per-run file |
 
 The transformation identity is
-`voxelscope/evidence-communication-compiler/v2`. The verifier identity is
-`voxelscope/evidence-communication-verifier/v2`. The prompt identity is
-`voxelscope/evidence-communication-json/v2`.
+`voxelscope/evidence-communication-compiler/v3`. The verifier identity is
+`voxelscope/evidence-communication-verifier/v3`. The prompt identity is
+`voxelscope/evidence-communication-json/v3`.
 
 Allowed claim types are:
 
@@ -140,7 +144,7 @@ Run the committed offline benchmark:
 uv run python -m voxelscope.evidence_communication_cli benchmark \
   --atlas build/gbm-atlas/atlas.json \
   --fixtures \
-    research/gbm-evidence-communication-benchmark-v2/benchmark-fixtures.json \
+    research/gbm-evidence-communication-benchmark-v3/benchmark-fixtures.json \
   --runner recorded \
   --output build/evidence-communication-benchmark
 ```
@@ -164,11 +168,31 @@ An artifact terminal state is one of:
   or more additional claims were excluded.
 - `refused`: a required fact or caveat was missing, or a hard refusal rule fired.
 
-A benchmark bundle contains `benchmark.json` and `receipt.json`. The committed
-recorded fixture has nine cases and two repeats per case. It covers supported
+A benchmark bundle contains `benchmark.json`, `index.json`, `receipt.json`, and one
+directory at `runs/<validated-case-id>/repeat-<four-digit-index>/` for every expected
+run. A parsed run contains `request.json`, `draft.json`, `artifact.json`,
+`receipt.json`, and `measurement.json`. An invalid-output run replaces `draft.json`
+with digest-safe `invalid-output.json`; malformed model bytes are never published.
+The top-level receipt closes every file except itself. The committed recorded fixture
+has nine cases and two repeats per case. It covers supported
 agreement, cross-layer disagreement, missing modality, unsupported join, stale
 evidence, restricted evidence, not measured versus negative evidence,
 source-reported target evidence, and prohibited clinical or causal language.
+
+Verify a complete benchmark directory without a model, network, or runner process:
+
+```bash
+uv run python -m voxelscope.evidence_communication_cli benchmark-replay \
+  --atlas build/gbm-atlas/atlas.json \
+  --fixtures \
+    research/gbm-evidence-communication-benchmark-v3/benchmark-fixtures.json \
+  --bundle build/evidence-communication-benchmark
+```
+
+Replay rejects any missing, extra, swapped, noncanonical, symlinked, or path-traversing
+entry. It re-derives every request, re-verifies parsed drafts, reconstructs
+invalid-output refusals, checks semantic digests, recomputes aggregate metrics, and
+rebuilds the canonical index and top-level receipt.
 
 The exact committed recorded-run metrics are:
 
@@ -224,7 +248,11 @@ measurement is never recorded as zero.
 
 The Ollama adapter uses only Python's standard library and accepts unauthenticated
 HTTP on localhost. It does not install Ollama, download a model, or call a remote
-endpoint. Confirm that an approved model is already installed and visible:
+endpoint. A tag alone is not an identity. Before generation, the adapter queries
+localhost-only `/api/version` and `/api/tags`, requires the requested tag to resolve
+exactly once, and compares the observed full model manifest digest and runtime version
+with the declared values. Any mismatch aborts the unpublished staged tree. Confirm
+that an approved model is already installed and visible:
 
 ```bash
 ollama list
@@ -236,20 +264,46 @@ Then run:
 uv run python -m voxelscope.evidence_communication_cli benchmark \
   --atlas build/gbm-atlas/atlas.json \
   --fixtures \
-    research/gbm-evidence-communication-benchmark-v2/benchmark-fixtures.json \
+    research/gbm-evidence-communication-benchmark-v3/benchmark-fixtures.json \
   --runner ollama \
   --endpoint http://127.0.0.1:11434 \
   --model YOUR_ALREADY_INSTALLED_MODEL \
+  --model-digest FULL_64_CHARACTER_MANIFEST_SHA256 \
+  --runtime-version EXACT_OLLAMA_VERSION \
+  --num-ctx DECLARED_CONTEXT_WINDOW \
+  --declared-environment OLLAMA_FLASH_ATTENTION=1 \
+  --declared-environment OLLAMA_KV_CACHE_TYPE=q8_0 \
   --output build/evidence-communication-ollama
 ```
 
-The adapter requests temperature zero and strict JSON. Malformed model JSON or an
+The adapter records localhost-only endpoint policy, temperature zero, strict JSON
+mode, timeout, context window, request options, and declared environment settings.
+Environment settings are labeled `declared_unverified`; they are custody assertions,
+not API observations. The adapter requests temperature zero and strict JSON. Malformed model JSON or an
 invalid model envelope becomes a refused `invalid_model_output` run with an error
 code, output SHA-256, and byte length. The raw malformed response is not placed in an
-accepted artifact. The benchmark continues with the remaining frozen runs. HTTP,
-timeout, and outer Ollama protocol failures abort publication. Ollama token counters
-are recorded when present. The adapter measures request latency. Peak process memory
-and peak Metal memory remain unavailable unless the runner reports them.
+artifact or benchmark file. The benchmark continues with the remaining frozen runs.
+HTTP, timeout, outer Ollama protocol, tag resolution, manifest digest, and runtime
+identity failures abort publication. Ollama token counters are recorded when present.
+The adapter measures request latency. Peak process memory and peak Metal memory remain
+unavailable unless the runner reports them.
+
+### Prospective study declaration, not an observed result
+
+The intended future host is an Apple M5 Pro with 18 CPU cores and 24 GB unified
+memory. The intended runtime declaration is Ollama `0.35.1`, official tag
+`qwen3:8b-q8_0`, 8.19B parameters, Q8_0, 8.9 GB, Apache-2.0, with
+`OLLAMA_FLASH_ATTENTION=1` and `OLLAMA_KV_CACHE_TYPE=q8_0` declared but not API
+observed. The currently known local ID prefix `e56358ca25dd` is not a full manifest
+digest and cannot authorize publication. These values are protocol-design inputs
+only: they are not embedded in the generic recorded fixture and no model was run or
+downloaded.
+
+The exact remaining blocker before the first real run is a reviewed full 64-character
+manifest SHA-256 for the already-installed approved tag, followed by successful
+localhost observation that the tag resolves uniquely to that digest and that the
+runtime reports exactly `0.35.1`. Until that identity and the frozen run declaration
+are approved, a real benchmark remains **NO-GO**.
 
 ## Publication-ready study protocol
 
@@ -261,7 +315,8 @@ caveat without adding unsupported certainty?
 ### Inputs
 
 Use the exact merged synthetic atlas and the exact benchmark fixture digest. Do not
-add real biomedical records. Record the model name, adapter, local endpoint, runtime,
+add real biomedical records. Record the model tag, full model manifest digest,
+adapter, local endpoint, exact runtime version, runner options, declared environment,
 prompt digest, transformation identity, verifier identity, atlas digest, fixture
 digest, and host measurement capability.
 
@@ -272,11 +327,13 @@ digest, and host measurement capability.
 3. Confirm that the selected local model is already installed. Do not download a
    model as part of the study.
 4. Run every frozen case for the declared repeat count with temperature zero.
-5. Preserve every parsed model envelope digest, full artifact digest, semantic digest,
-   exclusion, refusal reason, terminal state, and receipt digest. For malformed model
-   output, preserve only its error code, SHA-256, and byte length.
-6. Re-run the recorded benchmark as the deterministic control.
-7. Report unavailable measurements explicitly.
+5. Atomically publish the complete per-run tree and canonical index. Preserve every
+   exact request, parsed model envelope, verified artifact, communication receipt,
+   measurement, semantic digest, exclusion, refusal reason, and terminal state. For
+   malformed model output, preserve only its error code, SHA-256, and byte length.
+6. Run `benchmark-replay` offline and require complete tree and receipt closure.
+7. Re-run the recorded benchmark as the deterministic control.
+8. Report unavailable measurements explicitly.
 
 ### Primary endpoints
 
@@ -293,20 +350,21 @@ method is declared.
 
 ### Stop and refusal rules
 
-Stop publication if the atlas, fixture, prompt, transformation, verifier, model, or
-runtime identity differs from the declared protocol; if transport or the outer runner
-protocol fails; if a receipt does not close; or if any accepted sentence lacks exact
-verified-claim and source mappings. Treat model-produced JSON or envelope
-noncompliance as a digest-safe `invalid_model_output` refusal, not a publication stop.
-Preserve refused and negative benchmark outcomes. Do not replace them with safer
-model-generated prose.
+Stop publication if the atlas, fixture, prompt, transformation, verifier, model
+manifest, tag resolution, or runtime identity differs from the declared protocol; if
+transport or the outer runner protocol fails; if a receipt does not close; or if any
+accepted sentence lacks exact verified-claim and source mappings. The whole benchmark
+tree is staged and atomically published without replacement, so a stop leaves no
+partial output. Treat model-produced JSON or envelope noncompliance as a digest-safe
+`invalid_model_output` refusal, not a publication stop. Preserve refused and negative
+benchmark outcomes. Do not replace them with safer model-generated prose.
 
 ### Reporting
 
-Publish the exact commands, environment identity, all metric numerators and
-denominators, unavailable measurements, artifact and receipt digests, exclusions,
-refusal reasons, and whether a real local model ran. A negative benchmark result is a
-valid study result.
+Publish the exact commands, immutable model and runtime identity, runner configuration,
+declared-unverified environment, all metric numerators and denominators, unavailable
+measurements, index and receipt digests, exclusions, refusal reasons, and whether a
+real local model ran. A negative benchmark result is a valid study result.
 
 ## Limitations
 
@@ -314,5 +372,8 @@ The benchmark is synthetic and small. Its deterministic runner demonstrates the
 contract, not model quality. The current atlas has no source-supported restricted,
 missing-value, or explicit negative-evidence record, so those cases test refusal
 behavior. The Ollama adapter does not measure process-isolated peak memory or Metal
-allocation itself. No result supports a biological, diagnostic, prognostic, causal,
-treatment, ranking, therapeutic-target, or druggability claim.
+allocation itself, and environment-only settings remain declared rather than
+observed. No model has been run for this milestone. The source freeze, real-data
+adapter, acquisition, analysis, and clinical gates remain **NO-GO**. No result
+supports a biological, diagnostic, prognostic, causal, treatment, ranking,
+therapeutic-target, or druggability claim.

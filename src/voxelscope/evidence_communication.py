@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import itertools
+import os
 import shutil
 import tempfile
 import time
@@ -19,13 +20,34 @@ from .atomic import path_occupied, rename_no_replace
 from .canonical import (
     EvidenceError,
     canonical_json_bytes,
+    ensure_no_symlink,
     is_link_like,
     load_json,
     load_json_bytes,
     require_sha256,
+    safe_relative_path,
     sha256_bytes,
     sha256_file,
     write_json,
+)
+from .evidence_benchmark_records import (
+    BENCHMARK_FIXTURE_SCHEMA,
+    BENCHMARK_INDEX_SCHEMA,
+    BENCHMARK_RECEIPT_SCHEMA,
+    BENCHMARK_SCHEMA,
+    INVALID_OUTPUT_RECORD_SCHEMA,
+    RUNNER_MEASUREMENT_SCHEMA,
+    BenchmarkFile,
+    BenchmarkIndex,
+    BenchmarkReceipt,
+    BenchmarkRunIndex,
+    DeclaredEnvironmentSetting,
+    InvalidOutputRecord,
+    MeasurementValue,
+    RunnerConfiguration,
+    RunnerMeasurement,
+    RunnerOption,
+    benchmark_run_path,
 )
 from .evidence_communication_records import (
     ARTIFACT_SCHEMA,
@@ -58,11 +80,8 @@ from .records import (
     strict_fields,
 )
 
-BENCHMARK_FIXTURE_SCHEMA = "voxelscope/evidence-communication-benchmark-fixture/v2"
-BENCHMARK_SCHEMA = "voxelscope/evidence-communication-benchmark/v2"
-BENCHMARK_RECEIPT_SCHEMA = "voxelscope/evidence-communication-benchmark-receipt/v2"
 BOUNDARY_TEXT = "Research evidence only. Not for diagnosis or treatment decisions."
-PROMPT_ID = "voxelscope/evidence-communication-json/v2"
+PROMPT_ID = "voxelscope/evidence-communication-json/v3"
 PROMPT_TEXT = (
     "Return only the typed JSON envelope. Cite exact source IDs for every claim. "
     "Do not infer causality, certainty, diagnosis, prognosis, treatment, ranking, "
@@ -72,8 +91,19 @@ PROMPT_IDENTITY = PromptIdentity(PROMPT_ID, sha256_bytes(PROMPT_TEXT.encode("asc
 RECORDED_MODEL_IDENTITY = ModelIdentity(
     adapter="recorded-fixture",
     endpoint=None,
-    model="voxelscope-synthetic-recorded-draft-v2",
-    runtime="python-stdlib",
+    model="voxelscope-synthetic-recorded-draft-v3",
+    model_manifest_sha256=None,
+    runtime="voxelscope-recorded-fixture",
+    runtime_version="3",
+)
+RECORDED_RUNNER_CONFIGURATION = RunnerConfiguration(
+    context_window=None,
+    declared_environment=(),
+    endpoint_locality="not_applicable",
+    json_mode="recorded_fixture",
+    options=(),
+    temperature=None,
+    timeout_seconds=None,
 )
 _EXCLUDED_CLAIM_TYPES = (
     "causal",
@@ -142,6 +172,11 @@ class RunnerResult:
 class ModelRunner(Protocol):
     @property
     def identity(self) -> ModelIdentity: ...
+
+    @property
+    def configuration(self) -> RunnerConfiguration: ...
+
+    def validate_identity(self) -> None: ...
 
     def run(
         self,
@@ -1442,6 +1477,13 @@ class RecordedDraftRunner:
     def identity(self) -> ModelIdentity:
         return RECORDED_MODEL_IDENTITY
 
+    @property
+    def configuration(self) -> RunnerConfiguration:
+        return RECORDED_RUNNER_CONFIGURATION
+
+    def validate_identity(self) -> None:
+        return None
+
     def run(
         self,
         request: CommunicationRequest,
@@ -1460,16 +1502,55 @@ class RecordedDraftRunner:
         )
 
 
+class _NoModelRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        del req, fp, code, msg, headers
+        raise EvidenceError(
+            "local_model_redirect_forbidden",
+            f"Ollama request attempted redirect to {newurl}",
+        )
+
+
+def _open_local_model_request(
+    request: urllib.request.Request,
+    timeout_seconds: float,
+) -> Any:
+    return urllib.request.build_opener(_NoModelRedirectHandler()).open(
+        request,
+        timeout=timeout_seconds,
+    )
+
+
 class OllamaRunner:
     """Explicit localhost-only Ollama adapter with no mandatory dependency."""
 
-    def __init__(self, endpoint: str, model: str, timeout_seconds: float = 120.0):
+    def __init__(
+        self,
+        endpoint: str,
+        model: str,
+        model_manifest_sha256: str,
+        runtime_version: str,
+        timeout_seconds: float = 120.0,
+        context_window: int | None = None,
+        declared_environment: Mapping[str, str] | None = None,
+    ):
         parsed = urlparse(endpoint)
         if (
             parsed.scheme != "http"
             or parsed.hostname not in {"127.0.0.1", "::1", "localhost"}
             or parsed.username is not None
             or parsed.password is not None
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
         ):
             raise EvidenceError(
                 "nonlocal_model_endpoint",
@@ -1477,21 +1558,95 @@ class OllamaRunner:
             )
         if not model:
             raise EvidenceError("missing_local_model", "model is required")
+        require_sha256(model_manifest_sha256, "model_manifest_sha256")
+        if not runtime_version:
+            raise EvidenceError("missing_runtime_version", "Ollama runtime version is required")
         if timeout_seconds <= 0:
             raise EvidenceError("invalid_timeout", str(timeout_seconds))
+        if context_window is not None and context_window <= 0:
+            raise EvidenceError("invalid_context_window", str(context_window))
         self._endpoint = endpoint.rstrip("/")
         self._model = model
         self._timeout_seconds = timeout_seconds
+        self._identity_validated = False
         self._identity = ModelIdentity(
             adapter="ollama",
             endpoint=self._endpoint,
             model=model,
-            runtime="ollama-local-http",
+            model_manifest_sha256=model_manifest_sha256,
+            runtime="ollama",
+            runtime_version=runtime_version,
+        )
+        options = (RunnerOption("num_ctx", context_window),) if context_window is not None else ()
+        settings = tuple(
+            DeclaredEnvironmentSetting(name, "declared_unverified", value)
+            for name, value in sorted((declared_environment or {}).items())
+        )
+        self._configuration = RunnerConfiguration(
+            context_window=context_window,
+            declared_environment=settings,
+            endpoint_locality="localhost_only",
+            json_mode="strict_json",
+            options=options,
+            temperature=0.0,
+            timeout_seconds=timeout_seconds,
         )
 
     @property
     def identity(self) -> ModelIdentity:
         return self._identity
+
+    @property
+    def configuration(self) -> RunnerConfiguration:
+        return self._configuration
+
+    def _metadata(self, path: str, name: str) -> dict[str, Any]:
+        request = urllib.request.Request(self._endpoint + path, method="GET")
+        try:
+            with _open_local_model_request(request, self._timeout_seconds) as response:
+                body = response.read()
+        except (TimeoutError, urllib.error.URLError) as exc:
+            raise EvidenceError("local_model_identity_request_failed", str(exc)) from exc
+        try:
+            return require_object(
+                load_json_bytes(body, require_canonical=False),
+                name,
+            )
+        except EvidenceError as exc:
+            raise EvidenceError("local_model_identity_protocol_failed", exc.code) from exc
+
+    def validate_identity(self) -> None:
+        version_response = self._metadata("/api/version", "Ollama version response")
+        observed_version = require_string(version_response.get("version"), "version")
+        if observed_version != self.identity.runtime_version:
+            raise EvidenceError(
+                "runtime_identity_mismatch",
+                f"declared={self.identity.runtime_version} observed={observed_version}",
+            )
+        tags_response = self._metadata("/api/tags", "Ollama tags response")
+        matches: list[dict[str, Any]] = []
+        for item in require_list(tags_response.get("models"), "models"):
+            model = require_object(item, "Ollama model")
+            names = {
+                value for value in (model.get("name"), model.get("model")) if isinstance(value, str)
+            }
+            if self._model in names:
+                matches.append(model)
+        if len(matches) != 1:
+            raise EvidenceError(
+                "local_model_tag_resolution_mismatch",
+                f"{self._model} resolved to {len(matches)} models",
+            )
+        observed_digest = require_string(matches[0].get("digest"), "model digest")
+        if observed_digest.startswith("sha256:"):
+            observed_digest = observed_digest.removeprefix("sha256:")
+        require_sha256(observed_digest, "observed model manifest digest")
+        if observed_digest != self.identity.model_manifest_sha256:
+            raise EvidenceError(
+                "model_manifest_digest_mismatch",
+                f"declared={self.identity.model_manifest_sha256} observed={observed_digest}",
+            )
+        self._identity_validated = True
 
     def run(
         self,
@@ -1501,6 +1656,11 @@ class OllamaRunner:
         repeat_index: int,
     ) -> RunnerResult:
         del atlas, repeat_index
+        if not self._identity_validated:
+            raise EvidenceError(
+                "runner_identity_not_validated",
+                "Ollama identity must be validated before generation",
+            )
         instruction = _PROFILE_INSTRUCTIONS.get(profile)
         if instruction is None:
             raise EvidenceError("unknown_recorded_profile", profile)
@@ -1543,11 +1703,13 @@ class OllamaRunner:
             + "\nCommunication request:\n"
             + canonical_json_bytes(request.to_dict()).decode("ascii")
         )
+        options: dict[str, bool | int | float | str] = {"temperature": 0.0}
+        options.update({item.name: item.value for item in self.configuration.options})
         body = canonical_json_bytes(
             {
                 "format": "json",
                 "model": self._model,
-                "options": {"temperature": 0},
+                "options": options,
                 "prompt": prompt,
                 "stream": False,
             }
@@ -1560,7 +1722,7 @@ class OllamaRunner:
         )
         started = time.perf_counter()
         try:
-            with urllib.request.urlopen(http_request, timeout=self._timeout_seconds) as response:
+            with _open_local_model_request(http_request, self._timeout_seconds) as response:
                 response_body = response.read()
         except (TimeoutError, urllib.error.URLError) as exc:
             raise EvidenceError("local_model_request_failed", str(exc)) from exc
@@ -1671,6 +1833,8 @@ def _load_benchmark_cases(path: Path) -> tuple[BenchmarkCase, ...]:
         repeats = require_int(case["repeats"], "repeats")
         if repeats < 2:
             raise EvidenceError("insufficient_benchmark_repeats", str(case["case_id"]))
+        case_id = require_string(case["case_id"], "case_id")
+        benchmark_run_path(case_id, 0)
         profile = require_string(case["profile"], "profile")
         if profile not in _RECORDED_PROFILES:
             raise EvidenceError("unknown_recorded_profile", profile)
@@ -1701,7 +1865,7 @@ def _load_benchmark_cases(path: Path) -> tuple[BenchmarkCase, ...]:
             raise EvidenceError("expected_run_set_mismatch", str(case["case_id"]))
         cases.append(
             BenchmarkCase(
-                require_string(case["case_id"], "case_id"),
+                case_id,
                 tuple(sorted(expected_runs, key=lambda item: item.repeat_index)),
                 expected_terminal_state,
                 profile,
@@ -1754,17 +1918,166 @@ def _citation_counts(
     return sum(source_id in known for source_id in citations), len(citations)
 
 
-def run_benchmark(
-    atlas_path: Path,
-    fixture_path: Path,
-    output: Path,
+@dataclass(frozen=True)
+class _CompletedBenchmarkRun:
+    artifact: VerifiedCommunicationArtifact
+    case_id: str
+    communication_receipt: CommunicationReceipt
+    draft: ModelDraftEnvelope | None
+    invalid_output_record: InvalidOutputRecord | None
+    measurement: RunnerMeasurement
+    repeat_index: int
+    request: CommunicationRequest
+
+    def __post_init__(self) -> None:
+        if (self.draft is None) == (self.invalid_output_record is None):
+            raise EvidenceError(
+                "invalid_benchmark_run",
+                "exactly one draft or invalid-output record is required",
+            )
+
+    @property
+    def run_path(self) -> str:
+        return benchmark_run_path(self.case_id, self.repeat_index)
+
+
+def _measurement_value(
+    value: int | float | None,
+    unavailable_reason: str,
+) -> MeasurementValue:
+    if value is None:
+        return MeasurementValue.unavailable(unavailable_reason)
+    return MeasurementValue.available(value)
+
+
+def _runner_measurement(
+    case_id: str,
+    repeat_index: int,
     runner: ModelRunner,
+    result: RunnerResult,
+) -> RunnerMeasurement:
+    latency_reason = (
+        "recorded_replay_does_not_measure_latency"
+        if runner.identity.adapter == "recorded-fixture"
+        else "runner_did_not_report_latency"
+    )
+    return RunnerMeasurement(
+        case_id=case_id,
+        input_tokens=_measurement_value(
+            result.input_tokens,
+            "runner_did_not_report_input_tokens",
+        ),
+        latency_ms=_measurement_value(result.latency_ms, latency_reason),
+        model_identity=runner.identity,
+        output_tokens=_measurement_value(
+            result.output_tokens,
+            "runner_did_not_report_output_tokens",
+        ),
+        peak_memory_mb=_measurement_value(
+            result.peak_memory_mb,
+            "runner_did_not_report_peak_memory",
+        ),
+        peak_metal_memory_mb=_measurement_value(
+            result.peak_metal_memory_mb,
+            "runner_did_not_report_peak_metal_memory",
+        ),
+        repeat_index=repeat_index,
+        runner_configuration=runner.configuration,
+        schema_version=RUNNER_MEASUREMENT_SCHEMA,
+    )
+
+
+def _run_file_values(
+    run: _CompletedBenchmarkRun,
+) -> tuple[tuple[str, str, dict[str, Any]], ...]:
+    values: list[tuple[str, str, dict[str, Any]]] = [
+        ("communication_request", "request.json", run.request.to_dict())
+    ]
+    if run.draft is not None:
+        values.append(("model_draft", "draft.json", run.draft.to_dict()))
+    else:
+        if run.invalid_output_record is None:
+            raise EvidenceError("invalid_benchmark_run", run.run_path)
+        values.append(
+            (
+                "invalid_model_output",
+                "invalid-output.json",
+                run.invalid_output_record.to_dict(),
+            )
+        )
+    values.extend(
+        (
+            ("verified_artifact", "artifact.json", run.artifact.to_dict()),
+            (
+                "communication_receipt",
+                "receipt.json",
+                run.communication_receipt.to_dict(),
+            ),
+            ("runner_measurement", "measurement.json", run.measurement.to_dict()),
+        )
+    )
+    return tuple(values)
+
+
+def _run_record(
+    run: _CompletedBenchmarkRun,
+    atlas: dict[str, Any],
 ) -> dict[str, Any]:
-    if path_occupied(output):
-        raise EvidenceError("output_exists", str(output))
-    atlas, atlas_sha256 = _load_atlas(atlas_path)
-    cases = _load_benchmark_cases(fixture_path)
-    run_records: list[dict[str, Any]] = []
+    if run.draft is not None:
+        valid_citations, citation_count = _citation_counts(run.request, atlas, run.draft)
+        draft_sha256: str | None = sha256_bytes(canonical_json_bytes(run.draft.to_dict()))
+        proposed_claim_count = len(run.draft.claims)
+        invalid_model_output: dict[str, Any] | None = None
+    else:
+        valid_citations, citation_count = 0, 0
+        draft_sha256 = None
+        proposed_claim_count = 0
+        if run.invalid_output_record is None:
+            raise EvidenceError("invalid_benchmark_run", run.run_path)
+        invalid_model_output = run.invalid_output_record.invalid_model_output.to_dict()
+    return {
+        "artifact_sha256": sha256_bytes(canonical_json_bytes(run.artifact.to_dict())),
+        "case_id": run.case_id,
+        "citation_count": citation_count,
+        "draft_sha256": draft_sha256,
+        "emitted_caveat_coverage": run.artifact.emitted_caveat_coverage.to_dict(),
+        "emitted_fact_coverage": run.artifact.emitted_fact_coverage.to_dict(),
+        "exclusion_count": len(run.artifact.exclusions),
+        "invalid_model_output": invalid_model_output,
+        "measurement_sha256": sha256_bytes(canonical_json_bytes(run.measurement.to_dict())),
+        "model_identity": run.measurement.model_identity.to_dict(),
+        "proposed_claim_count": proposed_claim_count,
+        "receipt_sha256": sha256_bytes(canonical_json_bytes(run.communication_receipt.to_dict())),
+        "refusal_reasons": list(run.artifact.refusal_reasons),
+        "repeat_index": run.repeat_index,
+        "request_sha256": sha256_bytes(canonical_json_bytes(run.request.to_dict())),
+        "run_path": run.run_path,
+        "semantic_sha256": semantic_artifact_sha256(run.artifact),
+        "terminal_state": run.artifact.terminal_state,
+        "valid_citation_count": valid_citations,
+        "verified_draft_caveat_coverage": (run.artifact.verified_draft_caveat_coverage.to_dict()),
+        "verified_draft_fact_coverage": (run.artifact.verified_draft_fact_coverage.to_dict()),
+    }
+
+
+def _available_measurements(
+    runs: Sequence[_CompletedBenchmarkRun],
+    name: str,
+) -> list[int | float]:
+    values: list[int | float] = []
+    for run in runs:
+        measurement = getattr(run.measurement, name)
+        if not isinstance(measurement, MeasurementValue):
+            raise EvidenceError("invalid_measurement", name)
+        if measurement.value is not None:
+            values.append(measurement.value)
+    return values
+
+
+def _benchmark_metrics(
+    runs: Sequence[_CompletedBenchmarkRun],
+    atlas: dict[str, Any],
+) -> dict[str, Any]:
     emitted_fact_numerator = 0
     emitted_fact_denominator = 0
     emitted_caveat_numerator = 0
@@ -1780,133 +2093,75 @@ def run_benchmark(
     total_citations = 0
     accepted_count = 0
     refusal_count = 0
-    latencies: list[float] = []
-    input_tokens: list[int] = []
-    output_tokens: list[int] = []
-    peak_memory: list[float] = []
-    peak_metal: list[float] = []
     semantic_by_case: dict[str, list[str]] = {}
-    for case in cases:
-        request = derive_communication_request(
-            atlas,
-            atlas_sha256,
-            case.protein_id,
-            f"benchmark:{case.case_id}",
-            _profile_prompt_identity(case.profile),
+    for run in runs:
+        record = _run_record(run, atlas)
+        proposed_claims += require_int(
+            record["proposed_claim_count"],
+            "proposed_claim_count",
         )
-        for repeat_index in range(case.repeats):
-            result = runner.run(request, atlas, case.profile, repeat_index)
-            if result.envelope is not None:
-                if result.envelope.model_identity != runner.identity:
-                    raise EvidenceError("runner_model_identity_mismatch", case.case_id)
-                artifact, communication_receipt = verify_model_draft(
-                    request, atlas, result.envelope
-                )
-                draft_sha256: str | None = sha256_bytes(
-                    canonical_json_bytes(result.envelope.to_dict())
-                )
-                proposed_claim_count = len(result.envelope.claims)
-                excluded_claim_count = len(artifact.exclusions)
-                valid, total = _citation_counts(request, atlas, result.envelope)
-                invalid_model_output_value: dict[str, Any] | None = None
-            else:
-                if result.invalid_model_output is None:
-                    raise EvidenceError("invalid_runner_result", case.case_id)
-                artifact, communication_receipt = _close_invalid_model_output(
-                    request, runner.identity, result.invalid_model_output
-                )
-                draft_sha256 = None
-                proposed_claim_count = 0
-                excluded_claim_count = 0
-                valid, total = 0, 0
-                invalid_model_outputs += 1
-                invalid_model_output_value = result.invalid_model_output.to_dict()
-            if (
-                runner.identity.adapter == "recorded-fixture"
-                and artifact.terminal_state != case.expected_terminal_state
-            ):
-                raise EvidenceError("recorded_fixture_outcome_mismatch", case.case_id)
-            artifact_sha256 = sha256_bytes(canonical_json_bytes(artifact.to_dict()))
-            receipt_sha256 = sha256_bytes(canonical_json_bytes(communication_receipt.to_dict()))
-            semantic_sha256 = semantic_artifact_sha256(artifact)
-            if runner.identity.adapter == "recorded-fixture":
-                if draft_sha256 is None:
-                    raise EvidenceError("recorded_fixture_invalid_output", case.case_id)
-                expected_run = case.expected_runs[repeat_index]
-                if (
-                    draft_sha256 != expected_run.draft_sha256
-                    or artifact_sha256 != expected_run.artifact_sha256
-                ):
-                    raise EvidenceError("recorded_fixture_digest_mismatch", case.case_id)
-            semantic_by_case.setdefault(case.case_id, []).append(semantic_sha256)
-            proposed_claims += proposed_claim_count
-            excluded_claims += excluded_claim_count
-            emitted_fact_numerator += artifact.emitted_fact_coverage.numerator
-            emitted_fact_denominator += artifact.emitted_fact_coverage.denominator
-            emitted_caveat_numerator += artifact.emitted_caveat_coverage.numerator
-            emitted_caveat_denominator += artifact.emitted_caveat_coverage.denominator
-            verified_draft_fact_numerator += artifact.verified_draft_fact_coverage.numerator
-            verified_draft_fact_denominator += artifact.verified_draft_fact_coverage.denominator
-            verified_draft_caveat_numerator += artifact.verified_draft_caveat_coverage.numerator
-            verified_draft_caveat_denominator += artifact.verified_draft_caveat_coverage.denominator
-            valid_citations += valid
-            total_citations += total
-            if artifact.terminal_state == "refused":
-                refusal_count += 1
-            else:
-                accepted_count += 1
-            if result.latency_ms is not None:
-                latencies.append(result.latency_ms)
-            if result.input_tokens is not None:
-                input_tokens.append(result.input_tokens)
-            if result.output_tokens is not None:
-                output_tokens.append(result.output_tokens)
-            if result.peak_memory_mb is not None:
-                peak_memory.append(result.peak_memory_mb)
-            if result.peak_metal_memory_mb is not None:
-                peak_metal.append(result.peak_metal_memory_mb)
-            run_records.append(
-                {
-                    "artifact_sha256": artifact_sha256,
-                    "case_id": case.case_id,
-                    "citation_count": total,
-                    "draft_sha256": draft_sha256,
-                    "emitted_caveat_coverage": (artifact.emitted_caveat_coverage.to_dict()),
-                    "emitted_fact_coverage": (artifact.emitted_fact_coverage.to_dict()),
-                    "exclusion_count": excluded_claim_count,
-                    "invalid_model_output": invalid_model_output_value,
-                    "model_identity": runner.identity.to_dict(),
-                    "proposed_claim_count": proposed_claim_count,
-                    "receipt_sha256": receipt_sha256,
-                    "refusal_reasons": list(artifact.refusal_reasons),
-                    "repeat_index": repeat_index,
-                    "semantic_sha256": semantic_sha256,
-                    "terminal_state": artifact.terminal_state,
-                    "valid_citation_count": valid,
-                    "verified_draft_caveat_coverage": (
-                        artifact.verified_draft_caveat_coverage.to_dict()
-                    ),
-                    "verified_draft_fact_coverage": (
-                        artifact.verified_draft_fact_coverage.to_dict()
-                    ),
-                }
-            )
+        excluded_claims += require_int(record["exclusion_count"], "exclusion_count")
+        valid_citations += require_int(
+            record["valid_citation_count"],
+            "valid_citation_count",
+        )
+        total_citations += require_int(record["citation_count"], "citation_count")
+        invalid_model_outputs += record["invalid_model_output"] is not None
+        artifact = run.artifact
+        emitted_fact_numerator += artifact.emitted_fact_coverage.numerator
+        emitted_fact_denominator += artifact.emitted_fact_coverage.denominator
+        emitted_caveat_numerator += artifact.emitted_caveat_coverage.numerator
+        emitted_caveat_denominator += artifact.emitted_caveat_coverage.denominator
+        verified_draft_fact_numerator += artifact.verified_draft_fact_coverage.numerator
+        verified_draft_fact_denominator += artifact.verified_draft_fact_coverage.denominator
+        verified_draft_caveat_numerator += artifact.verified_draft_caveat_coverage.numerator
+        verified_draft_caveat_denominator += artifact.verified_draft_caveat_coverage.denominator
+        if artifact.terminal_state == "refused":
+            refusal_count += 1
+        else:
+            accepted_count += 1
+        semantic_by_case.setdefault(run.case_id, []).append(semantic_artifact_sha256(artifact))
     pair_count = 0
     mismatch_count = 0
     for digests in semantic_by_case.values():
         for left, right in itertools.combinations(digests, 2):
             pair_count += 1
             mismatch_count += left != right
-    metrics = {
-        "emitted_caveat_coverage": _fraction(emitted_caveat_numerator, emitted_caveat_denominator),
-        "emitted_fact_coverage": _fraction(emitted_fact_numerator, emitted_fact_denominator),
+    return {
+        "emitted_caveat_coverage": _fraction(
+            emitted_caveat_numerator,
+            emitted_caveat_denominator,
+        ),
+        "emitted_fact_coverage": _fraction(
+            emitted_fact_numerator,
+            emitted_fact_denominator,
+        ),
         "evidence_citation_validity": _fraction(valid_citations, total_citations),
-        "input_tokens": _measurement(input_tokens, "runner_did_not_report_input_tokens"),
-        "invalid_model_output_rate": _fraction(invalid_model_outputs, len(run_records)),
-        "latency_ms": _measurement(latencies, "recorded_replay_does_not_measure_latency"),
-        "output_tokens": _measurement(output_tokens, "runner_did_not_report_output_tokens"),
-        "peak_memory_mb": _measurement(peak_memory, "runner_did_not_report_peak_memory"),
-        "peak_metal_memory_mb": _measurement(peak_metal, "runner_did_not_report_peak_metal_memory"),
+        "input_tokens": _measurement(
+            _available_measurements(runs, "input_tokens"),
+            "runner_did_not_report_input_tokens",
+        ),
+        "invalid_model_output_rate": _fraction(invalid_model_outputs, len(runs)),
+        "latency_ms": _measurement(
+            _available_measurements(runs, "latency_ms"),
+            (
+                "recorded_replay_does_not_measure_latency"
+                if all(run.measurement.model_identity.adapter == "recorded-fixture" for run in runs)
+                else "runner_did_not_report_latency"
+            ),
+        ),
+        "output_tokens": _measurement(
+            _available_measurements(runs, "output_tokens"),
+            "runner_did_not_report_output_tokens",
+        ),
+        "peak_memory_mb": _measurement(
+            _available_measurements(runs, "peak_memory_mb"),
+            "runner_did_not_report_peak_memory",
+        ),
+        "peak_metal_memory_mb": _measurement(
+            _available_measurements(runs, "peak_metal_memory_mb"),
+            "runner_did_not_report_peak_metal_memory",
+        ),
         "replay_semantic_variance": _fraction(mismatch_count, pair_count),
         "unsupported_claim_rate": _fraction(excluded_claims, proposed_claims),
         "verified_draft_caveat_retention": _fraction(
@@ -1920,41 +2175,463 @@ def run_benchmark(
         "verifier_counts": {
             "accepted_or_partially_excluded": accepted_count,
             "refused": refusal_count,
-            "total": len(run_records),
+            "total": len(runs),
         },
     }
-    benchmark = {
+
+
+def _build_benchmark(
+    atlas: dict[str, Any],
+    atlas_sha256: str,
+    fixture_sha256: str,
+    model_identity: ModelIdentity,
+    runner_configuration: RunnerConfiguration,
+    runs: Sequence[_CompletedBenchmarkRun],
+) -> dict[str, Any]:
+    return {
         "atlas_sha256": atlas_sha256,
-        "fixture_sha256": sha256_file(fixture_path),
-        "metrics": metrics,
-        "model_identity": runner.identity.to_dict(),
-        "runs": run_records,
+        "fixture_sha256": fixture_sha256,
+        "metrics": _benchmark_metrics(runs, atlas),
+        "model_identity": model_identity.to_dict(),
+        "runner_configuration": runner_configuration.to_dict(),
+        "runs": [_run_record(run, atlas) for run in runs],
         "schema_version": BENCHMARK_SCHEMA,
         "synthetic_only": True,
         "terminal_state": "completed",
         "transformation_id": TRANSFORMATION_ID,
         "verifier_version": VERIFIER_VERSION,
     }
+
+
+def _build_benchmark_index(
+    atlas_sha256: str,
+    fixture_sha256: str,
+    model_identity: ModelIdentity,
+    runner_configuration: RunnerConfiguration,
+    runs: Sequence[_CompletedBenchmarkRun],
+) -> BenchmarkIndex:
+    indexed_runs: list[BenchmarkRunIndex] = []
+    for run in sorted(runs, key=lambda item: (item.case_id, item.repeat_index)):
+        files = tuple(
+            BenchmarkFile(
+                artifact_type,
+                f"{run.run_path}/{filename}",
+                sha256_bytes(canonical_json_bytes(value)),
+            )
+            for artifact_type, filename, value in _run_file_values(run)
+        )
+        indexed_runs.append(
+            BenchmarkRunIndex(
+                artifact_types=tuple(item.artifact_type for item in files),
+                case_id=run.case_id,
+                files=files,
+                model_identity=model_identity,
+                repeat_index=run.repeat_index,
+                run_path=run.run_path,
+                semantic_sha256=semantic_artifact_sha256(run.artifact),
+                terminal_state=run.artifact.terminal_state,
+            )
+        )
+    return BenchmarkIndex(
+        atlas_sha256=atlas_sha256,
+        fixture_sha256=fixture_sha256,
+        model_identity=model_identity,
+        runner_configuration=runner_configuration,
+        runs=tuple(indexed_runs),
+        schema_version=BENCHMARK_INDEX_SCHEMA,
+        terminal_state="completed",
+    )
+
+
+def _validate_recorded_run(
+    case: BenchmarkCase,
+    repeat_index: int,
+    run: _CompletedBenchmarkRun,
+) -> None:
+    if run.artifact.terminal_state != case.expected_terminal_state:
+        raise EvidenceError("recorded_fixture_outcome_mismatch", case.case_id)
+    if run.draft is None:
+        raise EvidenceError("recorded_fixture_invalid_output", case.case_id)
+    expected_run = case.expected_runs[repeat_index]
+    draft_sha256 = sha256_bytes(canonical_json_bytes(run.draft.to_dict()))
+    artifact_sha256 = sha256_bytes(canonical_json_bytes(run.artifact.to_dict()))
+    if draft_sha256 != expected_run.draft_sha256 or artifact_sha256 != expected_run.artifact_sha256:
+        raise EvidenceError("recorded_fixture_digest_mismatch", case.case_id)
+
+
+def _actual_benchmark_entries(root: Path) -> tuple[set[str], set[str]]:
+    if is_link_like(root) or not root.is_dir():
+        raise EvidenceError("unsafe_benchmark_bundle", str(root))
+    files: set[str] = set()
+    directories: set[str] = set()
+    for current, directory_names, file_names in os.walk(root, followlinks=False):
+        current_path = Path(current)
+        for name in directory_names:
+            path = current_path / name
+            if is_link_like(path) or not path.is_dir():
+                raise EvidenceError("symlink_forbidden", str(path))
+            directories.add(path.relative_to(root).as_posix())
+        for name in file_names:
+            path = current_path / name
+            if is_link_like(path) or not path.is_file():
+                raise EvidenceError("symlink_forbidden", str(path))
+            files.add(path.relative_to(root).as_posix())
+    return files, directories
+
+
+def _expected_directories(paths: set[str]) -> set[str]:
+    directories: set[str] = set()
+    for value in paths:
+        parent = safe_relative_path(value).parent
+        while parent.as_posix() != ".":
+            directories.add(parent.as_posix())
+            parent = parent.parent
+    return directories
+
+
+def run_benchmark(
+    atlas_path: Path,
+    fixture_path: Path,
+    output: Path,
+    runner: ModelRunner,
+) -> dict[str, Any]:
+    if path_occupied(output):
+        raise EvidenceError("output_exists", str(output))
+    atlas, atlas_sha256 = _load_atlas(atlas_path)
+    cases = _load_benchmark_cases(fixture_path)
+    fixture_sha256 = sha256_file(fixture_path)
+    runner.validate_identity()
+    completed_runs: list[_CompletedBenchmarkRun] = []
+    for case in cases:
+        request = derive_communication_request(
+            atlas,
+            atlas_sha256,
+            case.protein_id,
+            f"benchmark:{case.case_id}",
+            _profile_prompt_identity(case.profile),
+        )
+        for repeat_index in range(case.repeats):
+            result = runner.run(request, atlas, case.profile, repeat_index)
+            invalid_output_record: InvalidOutputRecord | None = None
+            if result.envelope is not None:
+                if result.envelope.model_identity != runner.identity:
+                    raise EvidenceError("runner_model_identity_mismatch", case.case_id)
+                artifact, communication_receipt = verify_model_draft(
+                    request, atlas, result.envelope
+                )
+            else:
+                if result.invalid_model_output is None:
+                    raise EvidenceError("invalid_runner_result", case.case_id)
+                artifact, communication_receipt = _close_invalid_model_output(
+                    request, runner.identity, result.invalid_model_output
+                )
+                invalid_output_record = InvalidOutputRecord(
+                    case_id=case.case_id,
+                    invalid_model_output=result.invalid_model_output,
+                    model_identity=runner.identity,
+                    repeat_index=repeat_index,
+                    request_id=request.request_id,
+                    schema_version=INVALID_OUTPUT_RECORD_SCHEMA,
+                    terminal_state="refused",
+                )
+            completed = _CompletedBenchmarkRun(
+                artifact=artifact,
+                case_id=case.case_id,
+                communication_receipt=communication_receipt,
+                draft=result.envelope,
+                invalid_output_record=invalid_output_record,
+                measurement=_runner_measurement(
+                    case.case_id,
+                    repeat_index,
+                    runner,
+                    result,
+                ),
+                repeat_index=repeat_index,
+                request=request,
+            )
+            if runner.identity.adapter == "recorded-fixture":
+                _validate_recorded_run(case, repeat_index, completed)
+            completed_runs.append(completed)
+    benchmark = _build_benchmark(
+        atlas,
+        atlas_sha256,
+        fixture_sha256,
+        runner.identity,
+        runner.configuration,
+        completed_runs,
+    )
+    index = _build_benchmark_index(
+        atlas_sha256,
+        fixture_sha256,
+        runner.identity,
+        runner.configuration,
+        completed_runs,
+    )
     benchmark_digest = sha256_bytes(canonical_json_bytes(benchmark))
-    benchmark_receipt = {
-        "atlas_sha256": atlas_sha256,
-        "benchmark_sha256": benchmark_digest,
-        "fixture_sha256": sha256_file(fixture_path),
-        "model_identity": runner.identity.to_dict(),
-        "schema_version": BENCHMARK_RECEIPT_SCHEMA,
-        "terminal_state": "closed",
-        "transformation_id": TRANSFORMATION_ID,
-        "verifier_version": VERIFIER_VERSION,
-    }
+    index_digest = sha256_bytes(canonical_json_bytes(index.to_dict()))
+    closed_files = [
+        BenchmarkFile("benchmark_report", "benchmark.json", benchmark_digest),
+        BenchmarkFile("benchmark_index", "index.json", index_digest),
+    ]
+    closed_files.extend(file for run in index.runs for file in run.files)
+    benchmark_receipt = BenchmarkReceipt(
+        atlas_sha256=atlas_sha256,
+        benchmark_sha256=benchmark_digest,
+        closed_files=tuple(sorted(closed_files, key=lambda item: item.path)),
+        fixture_sha256=fixture_sha256,
+        index_sha256=index_digest,
+        model_identity=runner.identity,
+        runner_configuration=runner.configuration,
+        schema_version=BENCHMARK_RECEIPT_SCHEMA,
+        terminal_state="closed",
+        transformation_id=TRANSFORMATION_ID,
+        verifier_version=VERIFIER_VERSION,
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix=f".{output.name}.tmp-", dir=output.parent))
     try:
+        for run in completed_runs:
+            for _, filename, value in _run_file_values(run):
+                write_json(stage / run.run_path / filename, value)
         write_json(stage / "benchmark.json", benchmark)
-        write_json(stage / "receipt.json", benchmark_receipt)
+        write_json(stage / "index.json", index.to_dict())
+        write_json(stage / "receipt.json", benchmark_receipt.to_dict())
         if sha256_file(stage / "benchmark.json") != benchmark_digest:
             raise EvidenceError("benchmark_digest_mismatch", str(output))
+        if sha256_file(stage / "index.json") != index_digest:
+            raise EvidenceError("benchmark_index_digest_mismatch", str(output))
+        replay_benchmark(atlas_path, fixture_path, stage)
         rename_no_replace(stage, output)
     finally:
         if stage.exists():
             shutil.rmtree(stage)
     return benchmark
+
+
+def replay_benchmark(
+    atlas_path: Path,
+    fixture_path: Path,
+    bundle: Path,
+) -> dict[str, Any]:
+    actual_files, actual_directories = _actual_benchmark_entries(bundle)
+    if "receipt.json" not in actual_files:
+        raise EvidenceError("bundle_file_set_mismatch", "receipt.json is missing")
+    receipt = BenchmarkReceipt.from_dict(
+        require_object(load_json(bundle / "receipt.json"), "benchmark receipt")
+    )
+    expected_files = {item.path for item in receipt.closed_files} | {"receipt.json"}
+    if actual_files != expected_files:
+        raise EvidenceError(
+            "bundle_file_set_mismatch",
+            f"missing={sorted(expected_files - actual_files)} "
+            f"extra={sorted(actual_files - expected_files)}",
+        )
+    expected_directories = _expected_directories(expected_files)
+    if actual_directories != expected_directories:
+        raise EvidenceError(
+            "bundle_directory_set_mismatch",
+            f"missing={sorted(expected_directories - actual_directories)} "
+            f"extra={sorted(actual_directories - expected_directories)}",
+        )
+    for closed_file in receipt.closed_files:
+        path = ensure_no_symlink(bundle, safe_relative_path(closed_file.path))
+        if sha256_file(path) != closed_file.sha256:
+            raise EvidenceError("benchmark_file_digest_mismatch", closed_file.path)
+    if receipt.transformation_id != TRANSFORMATION_ID:
+        raise EvidenceError("unsupported_transformation", receipt.transformation_id)
+    if receipt.verifier_version != VERIFIER_VERSION:
+        raise EvidenceError("unsupported_verifier", receipt.verifier_version)
+    stored_benchmark = require_object(load_json(bundle / "benchmark.json"), "benchmark")
+    stored_index = BenchmarkIndex.from_dict(
+        require_object(load_json(bundle / "index.json"), "benchmark index")
+    )
+    if sha256_file(bundle / "benchmark.json") != receipt.benchmark_sha256:
+        raise EvidenceError("benchmark_digest_mismatch", str(bundle))
+    if sha256_file(bundle / "index.json") != receipt.index_sha256:
+        raise EvidenceError("benchmark_index_digest_mismatch", str(bundle))
+    atlas, atlas_sha256 = _load_atlas(atlas_path)
+    cases = _load_benchmark_cases(fixture_path)
+    fixture_sha256 = sha256_file(fixture_path)
+    if receipt.atlas_sha256 != atlas_sha256 or stored_index.atlas_sha256 != atlas_sha256:
+        raise EvidenceError("source_atlas_digest_mismatch", str(atlas_path))
+    if receipt.fixture_sha256 != fixture_sha256 or stored_index.fixture_sha256 != fixture_sha256:
+        raise EvidenceError("benchmark_fixture_digest_mismatch", str(fixture_path))
+    if (
+        receipt.model_identity != stored_index.model_identity
+        or receipt.runner_configuration != stored_index.runner_configuration
+    ):
+        raise EvidenceError("benchmark_receipt_identity_mismatch", str(bundle))
+    expected_run_keys = {
+        (case.case_id, repeat_index) for case in cases for repeat_index in range(case.repeats)
+    }
+    index_by_key = {(item.case_id, item.repeat_index): item for item in stored_index.runs}
+    if set(index_by_key) != expected_run_keys:
+        raise EvidenceError("benchmark_run_set_mismatch", str(bundle))
+    case_by_id = {case.case_id: case for case in cases}
+    completed_runs: list[_CompletedBenchmarkRun] = []
+    for case in cases:
+        for repeat_index in range(case.repeats):
+            indexed = index_by_key[(case.case_id, repeat_index)]
+            request_path = ensure_no_symlink(
+                bundle,
+                safe_relative_path(f"{indexed.run_path}/request.json"),
+            )
+            request = CommunicationRequest.from_dict(
+                require_object(load_json(request_path), "communication request")
+            )
+            derived_request = derive_communication_request(
+                atlas,
+                atlas_sha256,
+                case.protein_id,
+                f"benchmark:{case.case_id}",
+                _profile_prompt_identity(case.profile),
+            )
+            if request != derived_request:
+                raise EvidenceError("request_replay_mismatch", request.request_id)
+            artifact = VerifiedCommunicationArtifact.from_dict(
+                require_object(
+                    load_json(bundle / indexed.run_path / "artifact.json"),
+                    "verified artifact",
+                )
+            )
+            communication_receipt = CommunicationReceipt.from_dict(
+                require_object(
+                    load_json(bundle / indexed.run_path / "receipt.json"),
+                    "communication receipt",
+                )
+            )
+            measurement = RunnerMeasurement.from_dict(
+                require_object(
+                    load_json(bundle / indexed.run_path / "measurement.json"),
+                    "runner measurement",
+                )
+            )
+            if (
+                measurement.case_id != case.case_id
+                or measurement.repeat_index != repeat_index
+                or measurement.model_identity != stored_index.model_identity
+                or measurement.runner_configuration != stored_index.runner_configuration
+            ):
+                raise EvidenceError("runner_measurement_identity_mismatch", indexed.run_path)
+            if "model_draft" in indexed.artifact_types:
+                draft = ModelDraftEnvelope.from_dict(
+                    require_object(
+                        load_json(bundle / indexed.run_path / "draft.json"),
+                        "model draft",
+                    )
+                )
+                if draft.model_identity != stored_index.model_identity:
+                    raise EvidenceError("runner_model_identity_mismatch", indexed.run_path)
+                rebuilt_artifact, rebuilt_communication_receipt = verify_model_draft(
+                    request,
+                    atlas,
+                    draft,
+                )
+                invalid_output_record = None
+            else:
+                invalid_output_record = InvalidOutputRecord.from_dict(
+                    require_object(
+                        load_json(bundle / indexed.run_path / "invalid-output.json"),
+                        "invalid model output",
+                    )
+                )
+                if (
+                    invalid_output_record.case_id != case.case_id
+                    or invalid_output_record.repeat_index != repeat_index
+                    or invalid_output_record.request_id != request.request_id
+                    or invalid_output_record.model_identity != stored_index.model_identity
+                ):
+                    raise EvidenceError("invalid_output_record_mismatch", indexed.run_path)
+                draft = None
+                rebuilt_artifact, rebuilt_communication_receipt = _close_invalid_model_output(
+                    request,
+                    stored_index.model_identity,
+                    invalid_output_record.invalid_model_output,
+                )
+            if (
+                artifact != rebuilt_artifact
+                or communication_receipt != rebuilt_communication_receipt
+            ):
+                raise EvidenceError("communication_replay_mismatch", indexed.run_path)
+            if sha256_file(request_path) != communication_receipt.request_sha256:
+                raise EvidenceError("request_digest_mismatch", request.request_id)
+            if draft is not None:
+                if (
+                    sha256_file(bundle / indexed.run_path / "draft.json")
+                    != communication_receipt.draft_sha256
+                ):
+                    raise EvidenceError("draft_digest_mismatch", request.request_id)
+            elif communication_receipt.invalid_model_output != (
+                invalid_output_record.invalid_model_output
+                if invalid_output_record is not None
+                else None
+            ):
+                raise EvidenceError("invalid_output_receipt_mismatch", request.request_id)
+            if (
+                sha256_file(bundle / indexed.run_path / "artifact.json")
+                != communication_receipt.artifact_sha256
+            ):
+                raise EvidenceError("artifact_digest_mismatch", request.request_id)
+            if semantic_artifact_sha256(artifact) != indexed.semantic_sha256:
+                raise EvidenceError("semantic_digest_mismatch", indexed.run_path)
+            completed = _CompletedBenchmarkRun(
+                artifact=artifact,
+                case_id=case.case_id,
+                communication_receipt=communication_receipt,
+                draft=draft,
+                invalid_output_record=invalid_output_record,
+                measurement=measurement,
+                repeat_index=repeat_index,
+                request=request,
+            )
+            if stored_index.model_identity.adapter == "recorded-fixture":
+                _validate_recorded_run(case_by_id[case.case_id], repeat_index, completed)
+            completed_runs.append(completed)
+    rebuilt_index = _build_benchmark_index(
+        atlas_sha256,
+        fixture_sha256,
+        stored_index.model_identity,
+        stored_index.runner_configuration,
+        completed_runs,
+    )
+    if rebuilt_index != stored_index:
+        raise EvidenceError("benchmark_index_replay_mismatch", str(bundle))
+    rebuilt_benchmark = _build_benchmark(
+        atlas,
+        atlas_sha256,
+        fixture_sha256,
+        stored_index.model_identity,
+        stored_index.runner_configuration,
+        completed_runs,
+    )
+    if rebuilt_benchmark != stored_benchmark:
+        raise EvidenceError("benchmark_replay_mismatch", str(bundle))
+    expected_closed_files = [
+        BenchmarkFile(
+            "benchmark_report",
+            "benchmark.json",
+            sha256_bytes(canonical_json_bytes(rebuilt_benchmark)),
+        ),
+        BenchmarkFile(
+            "benchmark_index",
+            "index.json",
+            sha256_bytes(canonical_json_bytes(rebuilt_index.to_dict())),
+        ),
+    ]
+    expected_closed_files.extend(file for run in rebuilt_index.runs for file in run.files)
+    rebuilt_receipt = BenchmarkReceipt(
+        atlas_sha256=atlas_sha256,
+        benchmark_sha256=sha256_bytes(canonical_json_bytes(rebuilt_benchmark)),
+        closed_files=tuple(sorted(expected_closed_files, key=lambda item: item.path)),
+        fixture_sha256=fixture_sha256,
+        index_sha256=sha256_bytes(canonical_json_bytes(rebuilt_index.to_dict())),
+        model_identity=stored_index.model_identity,
+        runner_configuration=stored_index.runner_configuration,
+        schema_version=BENCHMARK_RECEIPT_SCHEMA,
+        terminal_state="closed",
+        transformation_id=TRANSFORMATION_ID,
+        verifier_version=VERIFIER_VERSION,
+    )
+    if rebuilt_receipt != receipt:
+        raise EvidenceError("benchmark_receipt_replay_mismatch", str(bundle))
+    return rebuilt_benchmark

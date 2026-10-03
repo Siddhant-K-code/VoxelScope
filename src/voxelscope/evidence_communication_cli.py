@@ -15,6 +15,7 @@ from .evidence_communication import (
     RecordedDraftRunner,
     compile_model_draft,
     compile_recorded_fixture,
+    replay_benchmark,
     replay_communication,
     run_benchmark,
 )
@@ -59,8 +60,30 @@ def _parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--runner", choices=["recorded", "ollama"], default="recorded")
     benchmark.add_argument("--endpoint", default="http://127.0.0.1:11434")
     benchmark.add_argument("--model")
+    benchmark.add_argument("--model-digest")
+    benchmark.add_argument("--runtime-version")
     benchmark.add_argument("--timeout-seconds", type=float, default=120.0)
+    benchmark.add_argument("--num-ctx", type=int)
+    benchmark.add_argument("--declared-environment", action="append", default=[])
+
+    benchmark_replay = commands.add_parser("benchmark-replay")
+    benchmark_replay.add_argument("--atlas", type=Path, required=True)
+    benchmark_replay.add_argument("--fixtures", type=Path, required=True)
+    benchmark_replay.add_argument("--bundle", type=Path, required=True)
     return parser
+
+
+def _declared_environment(values: Sequence[str]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for value in values:
+        name, separator, setting = value.partition("=")
+        if not separator or not name or not setting or name in result:
+            raise EvidenceError(
+                "invalid_declared_environment",
+                "settings must be unique NAME=VALUE pairs",
+            )
+        result[name] = setting
+    return result
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -110,7 +133,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "missing_local_model",
                         "--model is required for the Ollama runner",
                     )
-                runner = OllamaRunner(args.endpoint, args.model, args.timeout_seconds)
+                if args.model_digest is None:
+                    raise EvidenceError(
+                        "missing_model_manifest_digest",
+                        "--model-digest is required for the Ollama runner",
+                    )
+                if args.runtime_version is None:
+                    raise EvidenceError(
+                        "missing_runtime_version",
+                        "--runtime-version is required for the Ollama runner",
+                    )
+                runner = OllamaRunner(
+                    args.endpoint,
+                    args.model,
+                    args.model_digest,
+                    args.runtime_version,
+                    args.timeout_seconds,
+                    args.num_ctx,
+                    _declared_environment(args.declared_environment),
+                )
             benchmark = run_benchmark(args.atlas, args.fixtures, args.output, runner)
             counts = benchmark["metrics"]["verifier_counts"]
             print(
@@ -120,6 +161,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"refused={counts['refused']}"
             )
             print(f"synthetic_only=true local_model_downloaded=false runner={args.runner}")
+        elif args.command == "benchmark-replay":
+            benchmark = replay_benchmark(args.atlas, args.fixtures, args.bundle)
+            counts = benchmark["metrics"]["verifier_counts"]
+            print(
+                f"benchmark_replay=verified runs={counts['total']} "
+                f"accepted_or_partially_excluded="
+                f"{counts['accepted_or_partially_excluded']} "
+                f"refused={counts['refused']}"
+            )
         else:
             raise EvidenceError("invalid_command", "unsupported command")
     except EvidenceError as exc:

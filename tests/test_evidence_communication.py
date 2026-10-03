@@ -16,6 +16,7 @@ from voxelscope.canonical import (
     sha256_bytes,
     write_json,
 )
+from voxelscope.evidence_benchmark_records import RunnerConfiguration
 from voxelscope.evidence_communication import (
     BOUNDARY_TEXT,
     OllamaRunner,
@@ -24,6 +25,7 @@ from voxelscope.evidence_communication import (
     compile_recorded_fixture,
     derive_communication_request,
     recorded_model_draft,
+    replay_benchmark,
     replay_communication,
     run_benchmark,
     semantic_artifact_sha256,
@@ -42,8 +44,10 @@ from voxelscope.gbm_atlas import assemble_gbm_evidence_atlas
 ROOT = Path(__file__).resolve().parents[1]
 ATLAS_FIXTURE = ROOT / "research/gbm-evidence-atlas-v1/source-manifest.json"
 BENCHMARK_FIXTURE = (
-    ROOT / "research/gbm-evidence-communication-benchmark-v2" / "benchmark-fixtures.json"
+    ROOT / "research/gbm-evidence-communication-benchmark-v3" / "benchmark-fixtures.json"
 )
+OLLAMA_MODEL_DIGEST = "a" * 64
+OLLAMA_RUNTIME_VERSION = "test-ollama-0.1"
 
 
 def _atlas() -> tuple[dict[str, Any], str]:
@@ -98,12 +102,30 @@ class _AlternateClaimIdRunner:
             adapter="test-alternate-claim-id",
             endpoint=None,
             model="synthetic-test",
+            model_manifest_sha256=None,
             runtime="pytest",
+            runtime_version="recorded",
+        )
+        self._configuration = RunnerConfiguration(
+            context_window=None,
+            declared_environment=(),
+            endpoint_locality="not_applicable",
+            json_mode="recorded_fixture",
+            options=(),
+            temperature=None,
+            timeout_seconds=None,
         )
 
     @property
     def identity(self) -> ModelIdentity:
         return self._identity
+
+    @property
+    def configuration(self) -> RunnerConfiguration:
+        return self._configuration
+
+    def validate_identity(self) -> None:
+        return None
 
     def run(
         self,
@@ -138,6 +160,76 @@ class _FakeHttpResponse:
 
     def read(self) -> bytes:
         return self._body
+
+
+def _ollama_responder(
+    generate_response: bytes,
+    *,
+    observed_digest: str = OLLAMA_MODEL_DIGEST,
+    observed_version: str = OLLAMA_RUNTIME_VERSION,
+    generation_error: Exception | None = None,
+) -> Any:
+    def respond(
+        request: urllib.request.Request,
+        timeout_seconds: float | None = None,
+    ) -> _FakeHttpResponse:
+        del timeout_seconds
+        if request.full_url.endswith("/api/version"):
+            return _FakeHttpResponse(canonical_json_bytes({"version": observed_version}))
+        if request.full_url.endswith("/api/tags"):
+            return _FakeHttpResponse(
+                canonical_json_bytes(
+                    {
+                        "models": [
+                            {
+                                "digest": observed_digest,
+                                "model": "installed-test-model",
+                                "name": "installed-test-model",
+                            }
+                        ]
+                    }
+                )
+            )
+        if generation_error is not None:
+            raise generation_error
+        return _FakeHttpResponse(generate_response)
+
+    return respond
+
+
+def _tree_bytes(root: Path) -> dict[str, bytes]:
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+
+
+def _reclose_benchmark_file(bundle: Path, relative_path: str) -> None:
+    receipt = load_json(bundle / "receipt.json")
+    assert isinstance(receipt, dict)
+    digest = sha256_bytes((bundle / relative_path).read_bytes())
+    closed_files = receipt["closed_files"]
+    assert isinstance(closed_files, list)
+    for item in closed_files:
+        assert isinstance(item, dict)
+        if item["path"] == relative_path:
+            item["sha256"] = digest
+            break
+    else:
+        raise AssertionError(f"closed file not found: {relative_path}")
+    if relative_path == "benchmark.json":
+        receipt["benchmark_sha256"] = digest
+    elif relative_path == "index.json":
+        receipt["index_sha256"] = digest
+    write_json(bundle / "receipt.json", receipt)
+
+
+def _recorded_benchmark(tmp_path: Path, name: str = "benchmark") -> tuple[Path, Path]:
+    atlas_path = _atlas_path(tmp_path)
+    bundle = tmp_path / name
+    run_benchmark(atlas_path, BENCHMARK_FIXTURE, bundle, RecordedDraftRunner())
+    return atlas_path, bundle
 
 
 def test_recorded_compilation_and_replay_are_byte_deterministic(
@@ -480,6 +572,227 @@ def test_benchmark_metrics_are_exact_and_unavailable_is_not_zero(
     assert receipt["benchmark_sha256"] == sha256_bytes((output / "benchmark.json").read_bytes())
 
 
+def test_recorded_benchmark_tree_is_byte_deterministic_and_offline_replayable(
+    tmp_path: Path,
+) -> None:
+    atlas_path = _atlas_path(tmp_path)
+    first = tmp_path / "first-benchmark"
+    second = tmp_path / "second-benchmark"
+
+    first_result = run_benchmark(
+        atlas_path,
+        BENCHMARK_FIXTURE,
+        first,
+        RecordedDraftRunner(),
+    )
+    second_result = run_benchmark(
+        atlas_path,
+        BENCHMARK_FIXTURE,
+        second,
+        RecordedDraftRunner(),
+    )
+
+    assert first_result == second_result
+    assert _tree_bytes(first) == _tree_bytes(second)
+    assert len(_tree_bytes(first)) == 93
+    assert replay_benchmark(atlas_path, BENCHMARK_FIXTURE, first) == first_result
+    receipt = load_json(first / "receipt.json")
+    assert len(receipt["closed_files"]) == 92
+    assert {item["path"] for item in receipt["closed_files"]} == (
+        set(_tree_bytes(first)) - {"receipt.json"}
+    )
+    sample = first / "runs/supported-agreement/repeat-0000"
+    assert {item.name for item in sample.iterdir()} == {
+        "artifact.json",
+        "draft.json",
+        "measurement.json",
+        "receipt.json",
+        "request.json",
+    }
+
+
+def test_benchmark_publication_refuses_clobber_without_changing_tree(
+    tmp_path: Path,
+) -> None:
+    atlas_path, bundle = _recorded_benchmark(tmp_path)
+    before = _tree_bytes(bundle)
+
+    with pytest.raises(EvidenceError) as caught:
+        run_benchmark(
+            atlas_path,
+            BENCHMARK_FIXTURE,
+            bundle,
+            RecordedDraftRunner(),
+        )
+
+    assert caught.value.code == "output_exists"
+    assert _tree_bytes(bundle) == before
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "runs/supported-agreement/repeat-0000/request.json",
+        "runs/supported-agreement/repeat-0000/draft.json",
+        "runs/supported-agreement/repeat-0000/artifact.json",
+        "runs/supported-agreement/repeat-0000/receipt.json",
+    ],
+)
+def test_benchmark_replay_rejects_modified_run_records(
+    tmp_path: Path,
+    relative_path: str,
+) -> None:
+    atlas_path, bundle = _recorded_benchmark(tmp_path)
+    value = load_json(bundle / relative_path)
+    assert isinstance(value, dict)
+    if relative_path.endswith("draft.json"):
+        claims = value["claims"]
+        assert isinstance(claims, list)
+        claim = claims[0]
+        assert isinstance(claim, dict)
+        claim["draft_text"] += " Modified."
+    else:
+        warnings = value["warnings"]
+        assert isinstance(warnings, list)
+        warnings.append("tampered")
+    write_json(bundle / relative_path, value)
+    _reclose_benchmark_file(bundle, relative_path)
+
+    with pytest.raises(EvidenceError):
+        replay_benchmark(atlas_path, BENCHMARK_FIXTURE, bundle)
+
+
+@pytest.mark.parametrize("change", ["missing", "extra", "swapped"])
+def test_benchmark_replay_rejects_missing_extra_and_swapped_run_files(
+    tmp_path: Path,
+    change: str,
+) -> None:
+    atlas_path, bundle = _recorded_benchmark(tmp_path)
+    first = "runs/supported-agreement/repeat-0000/request.json"
+    second = "runs/cross-layer-disagreement/repeat-0000/request.json"
+    if change == "missing":
+        (bundle / first).unlink()
+    elif change == "extra":
+        write_json(bundle / "unexpected.json", {"unexpected": True})
+    else:
+        first_bytes = (bundle / first).read_bytes()
+        second_bytes = (bundle / second).read_bytes()
+        (bundle / first).write_bytes(second_bytes)
+        (bundle / second).write_bytes(first_bytes)
+        _reclose_benchmark_file(bundle, first)
+        _reclose_benchmark_file(bundle, second)
+
+    with pytest.raises(EvidenceError):
+        replay_benchmark(atlas_path, BENCHMARK_FIXTURE, bundle)
+
+
+def test_benchmark_replay_rejects_semantic_digest_mismatch(
+    tmp_path: Path,
+) -> None:
+    atlas_path, bundle = _recorded_benchmark(tmp_path)
+    index = load_json(bundle / "index.json")
+    assert isinstance(index, dict)
+    runs = index["runs"]
+    assert isinstance(runs, list)
+    run = runs[0]
+    assert isinstance(run, dict)
+    run["semantic_sha256"] = "0" * 64
+    write_json(bundle / "index.json", index)
+    _reclose_benchmark_file(bundle, "index.json")
+
+    with pytest.raises(EvidenceError) as caught:
+        replay_benchmark(atlas_path, BENCHMARK_FIXTURE, bundle)
+    assert caught.value.code == "semantic_digest_mismatch"
+
+
+def test_benchmark_replay_recomputes_aggregate_metrics(
+    tmp_path: Path,
+) -> None:
+    atlas_path, bundle = _recorded_benchmark(tmp_path)
+    benchmark = load_json(bundle / "benchmark.json")
+    assert isinstance(benchmark, dict)
+    metrics = benchmark["metrics"]
+    assert isinstance(metrics, dict)
+    counts = metrics["verifier_counts"]
+    assert isinstance(counts, dict)
+    counts["refused"] = 3
+    write_json(bundle / "benchmark.json", benchmark)
+    _reclose_benchmark_file(bundle, "benchmark.json")
+
+    with pytest.raises(EvidenceError) as caught:
+        replay_benchmark(atlas_path, BENCHMARK_FIXTURE, bundle)
+    assert caught.value.code == "benchmark_replay_mismatch"
+
+
+def test_benchmark_replay_rejects_noncanonical_run_json(
+    tmp_path: Path,
+) -> None:
+    atlas_path, bundle = _recorded_benchmark(tmp_path)
+    relative_path = "runs/supported-agreement/repeat-0000/artifact.json"
+    path = bundle / relative_path
+    path.write_bytes(path.read_bytes().replace(b"{", b"{ ", 1))
+    _reclose_benchmark_file(bundle, relative_path)
+
+    with pytest.raises(EvidenceError) as caught:
+        replay_benchmark(atlas_path, BENCHMARK_FIXTURE, bundle)
+    assert caught.value.code == "noncanonical_json"
+
+
+def test_benchmark_replay_rejects_symlinks_and_path_traversal(
+    tmp_path: Path,
+) -> None:
+    atlas_path, bundle = _recorded_benchmark(tmp_path)
+    request_path = bundle / "runs/supported-agreement/repeat-0000/request.json"
+    target = tmp_path / "request-copy.json"
+    target.write_bytes(request_path.read_bytes())
+    request_path.unlink()
+    request_path.symlink_to(target)
+
+    with pytest.raises(EvidenceError) as symlink:
+        replay_benchmark(atlas_path, BENCHMARK_FIXTURE, bundle)
+    assert symlink.value.code == "symlink_forbidden"
+
+    receipt = load_json(bundle / "receipt.json")
+    assert isinstance(receipt, dict)
+    closed_files = receipt["closed_files"]
+    assert isinstance(closed_files, list)
+    item = closed_files[0]
+    assert isinstance(item, dict)
+    item["path"] = "../escape.json"
+    write_json(bundle / "receipt.json", receipt)
+    request_path.unlink()
+    request_path.write_bytes(target.read_bytes())
+
+    with pytest.raises(EvidenceError) as traversal:
+        replay_benchmark(atlas_path, BENCHMARK_FIXTURE, bundle)
+    assert traversal.value.code == "unsafe_path"
+
+
+def test_benchmark_case_id_path_traversal_is_rejected_before_publication(
+    tmp_path: Path,
+) -> None:
+    fixture = load_json(BENCHMARK_FIXTURE)
+    assert isinstance(fixture, dict)
+    cases = fixture["cases"]
+    assert isinstance(cases, list)
+    case = cases[0]
+    assert isinstance(case, dict)
+    case["case_id"] = "../escape"
+    fixture_path = tmp_path / "unsafe-fixture.json"
+    write_json(fixture_path, fixture)
+    output = tmp_path / "unsafe-output"
+
+    with pytest.raises(EvidenceError) as caught:
+        run_benchmark(
+            _atlas_path(tmp_path),
+            fixture_path,
+            output,
+            RecordedDraftRunner(),
+        )
+    assert caught.value.code == "unsafe_benchmark_case_id"
+    assert not output.exists()
+
+
 def test_semantic_variance_ignores_claim_ids_but_keeps_meaning(
     tmp_path: Path,
 ) -> None:
@@ -576,6 +889,21 @@ def test_cli_compile_replay_and_benchmark(
     assert "runs=18" in captured.out
     assert "local_model_downloaded=false" in captured.out
     assert captured.err == ""
+    assert (
+        main(
+            [
+                "benchmark-replay",
+                "--atlas",
+                str(atlas_path),
+                "--fixtures",
+                str(BENCHMARK_FIXTURE),
+                "--bundle",
+                str(benchmark),
+            ]
+        )
+        == 0
+    )
+    assert "benchmark_replay=verified runs=18" in capsys.readouterr().out
 
 
 def test_publication_refuses_clobber_without_changing_output(
@@ -637,9 +965,9 @@ def test_invalid_ollama_output_is_counted_and_benchmark_continues(
         }
     )
     monkeypatch.setattr(
-        communication_module.urllib.request,
-        "urlopen",
-        lambda *args, **kwargs: _FakeHttpResponse(response),
+        communication_module,
+        "_open_local_model_request",
+        _ollama_responder(response),
     )
     atlas_path = _atlas_path(tmp_path)
     output = tmp_path / "malformed"
@@ -648,7 +976,14 @@ def test_invalid_ollama_output_is_counted_and_benchmark_continues(
         atlas_path,
         BENCHMARK_FIXTURE,
         output,
-        OllamaRunner("http://127.0.0.1:11434", "installed-test-model"),
+        OllamaRunner(
+            "http://127.0.0.1:11434",
+            "installed-test-model",
+            OLLAMA_MODEL_DIGEST,
+            OLLAMA_RUNTIME_VERSION,
+            context_window=4096,
+            declared_environment={"OLLAMA_TEST_SETTING": "declared-value"},
+        ),
     )
 
     assert benchmark["metrics"]["invalid_model_output_rate"] == {
@@ -676,19 +1011,130 @@ def test_invalid_ollama_output_is_counted_and_benchmark_continues(
     assert raw_model_output not in (output / "benchmark.json").read_text(encoding="ascii")
     receipt = load_json(output / "receipt.json")
     assert receipt["terminal_state"] == "closed"
+    assert benchmark["runner_configuration"] == {
+        "context_window": 4096,
+        "declared_environment": [
+            {
+                "name": "OLLAMA_TEST_SETTING",
+                "provenance": "declared_unverified",
+                "value": "declared-value",
+            }
+        ],
+        "endpoint_locality": "localhost_only",
+        "json_mode": "strict_json",
+        "options": [{"name": "num_ctx", "value": 4096}],
+        "temperature": 0.0,
+        "timeout_seconds": 120.0,
+    }
+    invalid_run = output / "runs/supported-agreement/repeat-0000"
+    assert {item.name for item in invalid_run.iterdir()} == {
+        "artifact.json",
+        "invalid-output.json",
+        "measurement.json",
+        "receipt.json",
+        "request.json",
+    }
+    invalid_record = load_json(invalid_run / "invalid-output.json")
+    assert invalid_record["invalid_model_output"]["output_sha256"] == sha256_bytes(
+        raw_model_output.encode("utf-8")
+    )
+    assert "raw_output" not in invalid_record
+    monkeypatch.setattr(
+        communication_module,
+        "_open_local_model_request",
+        lambda *args, **kwargs: pytest.fail("offline replay attempted network access"),
+    )
+    assert replay_benchmark(atlas_path, BENCHMARK_FIXTURE, output) == benchmark
+
+
+@pytest.mark.parametrize(
+    ("observed_digest", "observed_version", "error_code"),
+    [
+        ("b" * 64, OLLAMA_RUNTIME_VERSION, "model_manifest_digest_mismatch"),
+        (OLLAMA_MODEL_DIGEST, "different-runtime", "runtime_identity_mismatch"),
+    ],
+)
+def test_ollama_identity_drift_aborts_without_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    observed_digest: str,
+    observed_version: str,
+    error_code: str,
+) -> None:
+    monkeypatch.setattr(
+        communication_module,
+        "_open_local_model_request",
+        _ollama_responder(
+            b"",
+            observed_digest=observed_digest,
+            observed_version=observed_version,
+        ),
+    )
+    output = tmp_path / "identity-drift"
+
+    with pytest.raises(EvidenceError) as caught:
+        run_benchmark(
+            _atlas_path(tmp_path),
+            BENCHMARK_FIXTURE,
+            output,
+            OllamaRunner(
+                "http://127.0.0.1:11434",
+                "installed-test-model",
+                OLLAMA_MODEL_DIGEST,
+                OLLAMA_RUNTIME_VERSION,
+            ),
+        )
+    assert caught.value.code == error_code
+    assert not output.exists()
+
+
+def test_cli_refuses_tag_only_ollama_identity_before_network(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        communication_module,
+        "_open_local_model_request",
+        lambda *args, **kwargs: pytest.fail("tag-only identity attempted network access"),
+    )
+    output = tmp_path / "tag-only"
+
+    assert (
+        main(
+            [
+                "benchmark",
+                "--atlas",
+                str(_atlas_path(tmp_path)),
+                "--fixtures",
+                str(BENCHMARK_FIXTURE),
+                "--output",
+                str(output),
+                "--runner",
+                "ollama",
+                "--model",
+                "installed-test-model",
+                "--runtime-version",
+                OLLAMA_RUNTIME_VERSION,
+            ]
+        )
+        == 2
+    )
+    assert "missing_model_manifest_digest" in capsys.readouterr().err
+    assert not output.exists()
 
 
 def test_ollama_transport_failure_aborts_without_publication(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fail_transport(*args: object, **kwargs: object) -> None:
-        raise urllib.error.URLError("offline")
-
     monkeypatch.setattr(
-        communication_module.urllib.request,
-        "urlopen",
-        fail_transport,
+        communication_module,
+        "_open_local_model_request",
+        _ollama_responder(
+            b"",
+            generation_error=urllib.error.URLError("offline"),
+        ),
     )
     output = tmp_path / "transport-failure"
 
@@ -697,7 +1143,12 @@ def test_ollama_transport_failure_aborts_without_publication(
             _atlas_path(tmp_path),
             BENCHMARK_FIXTURE,
             output,
-            OllamaRunner("http://127.0.0.1:11434", "installed-test-model"),
+            OllamaRunner(
+                "http://127.0.0.1:11434",
+                "installed-test-model",
+                OLLAMA_MODEL_DIGEST,
+                OLLAMA_RUNTIME_VERSION,
+            ),
         )
     assert caught.value.code == "local_model_request_failed"
     assert not output.exists()
@@ -705,5 +1156,10 @@ def test_ollama_transport_failure_aborts_without_publication(
 
 def test_ollama_adapter_refuses_nonlocal_endpoint() -> None:
     with pytest.raises(EvidenceError) as caught:
-        OllamaRunner("https://example.com", "model")
+        OllamaRunner(
+            "https://example.com",
+            "model",
+            OLLAMA_MODEL_DIGEST,
+            OLLAMA_RUNTIME_VERSION,
+        )
     assert caught.value.code == "nonlocal_model_endpoint"
