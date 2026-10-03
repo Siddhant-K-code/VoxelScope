@@ -20,6 +20,9 @@ from .records import (
 REQUEST_SCHEMA_V5 = "voxelscope/evidence-communication-v5/discourse-request/v1"
 PLAN_SCHEMA_V5 = "voxelscope/evidence-communication-v5/discourse-plan/v1"
 CATALOG_SCHEMA_V5 = "voxelscope/evidence-communication-v5/sentence-catalog/v1"
+IMPLEMENTATION_MANIFEST_SCHEMA_V5 = (
+    "voxelscope/evidence-communication-v5/implementation-manifest/v1"
+)
 ELIGIBILITY_SCHEMA_V5 = "voxelscope/evidence-communication-v5/model-eligibility/v1"
 OPTIMALITY_SCHEMA_V5 = "voxelscope/evidence-communication-v5/optimality-certificate/v1"
 RENDERED_ARTIFACT_SCHEMA_V5 = "voxelscope/evidence-communication-v5/rendered-artifact/v1"
@@ -42,6 +45,8 @@ _UNIT_KINDS = frozenset({"fact", "caveat", "safety", "optional_context"})
 _FILE_TYPES = frozenset(
     {
         "discourse_request",
+        "sentence_catalog",
+        "implementation_manifest",
         "eligibility_record",
         "optimality_certificate",
         "discourse_plan",
@@ -622,11 +627,19 @@ class SentenceCatalogV5:
 @dataclass(frozen=True)
 class SourceCustodyV5:
     source_revision: str
+    source_root_tree: str
+    implementation_manifest_sha256: str
     source_tree_state: str
 
     def __post_init__(self) -> None:
         if _GIT_REVISION.fullmatch(self.source_revision) is None:
             raise EvidenceError("invalid_source_revision", self.source_revision)
+        if _GIT_REVISION.fullmatch(self.source_root_tree) is None:
+            raise EvidenceError("invalid_source_root_tree", self.source_root_tree)
+        require_sha256(
+            self.implementation_manifest_sha256,
+            "implementation_manifest_sha256",
+        )
         if self.source_tree_state != "clean":
             raise EvidenceError("source_tree_not_clean", self.source_tree_state)
 
@@ -634,18 +647,97 @@ class SourceCustodyV5:
     def from_dict(cls, data: dict[str, Any]) -> SourceCustodyV5:
         value = strict_fields(
             data,
-            {"source_revision", "source_tree_state"},
+            {
+                "implementation_manifest_sha256",
+                "source_revision",
+                "source_root_tree",
+                "source_tree_state",
+            },
             "SourceCustodyV5",
         )
         return cls(
             require_string(value["source_revision"], "source_revision"),
+            require_string(value["source_root_tree"], "source_root_tree"),
+            require_string(
+                value["implementation_manifest_sha256"],
+                "implementation_manifest_sha256",
+            ),
             require_string(value["source_tree_state"], "source_tree_state"),
         )
 
     def to_dict(self) -> dict[str, str]:
         return {
+            "implementation_manifest_sha256": self.implementation_manifest_sha256,
             "source_revision": self.source_revision,
+            "source_root_tree": self.source_root_tree,
             "source_tree_state": self.source_tree_state,
+        }
+
+
+@dataclass(frozen=True)
+class ImplementationFileV5:
+    path: str
+    sha256: str
+
+    def __post_init__(self) -> None:
+        safe_relative_path(self.path)
+        require_sha256(self.sha256, "implementation file sha256")
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ImplementationFileV5:
+        value = strict_fields(
+            data,
+            {"path", "sha256"},
+            "ImplementationFileV5",
+        )
+        return cls(
+            require_string(value["path"], "path"),
+            require_string(value["sha256"], "sha256"),
+        )
+
+    def to_dict(self) -> dict[str, str]:
+        return {"path": self.path, "sha256": self.sha256}
+
+
+@dataclass(frozen=True)
+class ImplementationManifestV5:
+    schema_version: str
+    files: tuple[ImplementationFileV5, ...]
+    terminal_state: str
+
+    def __post_init__(self) -> None:
+        if self.schema_version != IMPLEMENTATION_MANIFEST_SCHEMA_V5:
+            raise EvidenceError("unsupported_schema", self.schema_version)
+        paths = tuple(item.path for item in self.files)
+        if not paths or paths != tuple(sorted(paths)) or len(paths) != len(set(paths)):
+            raise EvidenceError(
+                "invalid_implementation_manifest_files",
+                "implementation paths must be nonempty, sorted, and unique",
+            )
+        if self.terminal_state != "closed":
+            raise EvidenceError("invalid_terminal_state", self.terminal_state)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ImplementationManifestV5:
+        value = strict_fields(
+            data,
+            {"files", "schema_version", "terminal_state"},
+            "ImplementationManifestV5",
+        )
+        return cls(
+            require_string(value["schema_version"], "schema_version"),
+            tuple(
+                ImplementationFileV5.from_dict(require_object(item, "implementation file"))
+                for item in require_list(value["files"], "files")
+            ),
+            require_string(value["terminal_state"], "terminal_state"),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "files": [item.to_dict() for item in self.files],
+            "schema_version": self.schema_version,
+            "terminal_state": self.terminal_state,
         }
 
 

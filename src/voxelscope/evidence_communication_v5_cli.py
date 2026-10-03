@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -15,7 +14,6 @@ from .evidence_communication_v5 import (
     replay_control_bundle_v5,
     verify_contract_identities_v5,
 )
-from .evidence_communication_v5_records import SourceCustodyV5
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -34,35 +32,9 @@ def _parser() -> argparse.ArgumentParser:
     compile_command.add_argument("--output", type=Path, required=True)
 
     replay = commands.add_parser("replay")
+    replay.add_argument("--repository-root", type=Path, default=Path("."))
     replay.add_argument("--bundle", type=Path, required=True)
     return parser
-
-
-def _git(repository_root: Path, *arguments: str) -> str:
-    completed = subprocess.run(
-        ["git", "-C", str(repository_root), *arguments],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if completed.returncode != 0:
-        raise EvidenceError(
-            "source_custody_unavailable",
-            completed.stderr.strip() or "git command failed",
-        )
-    return completed.stdout.strip()
-
-
-def source_custody_from_repository_v5(repository_root: Path) -> SourceCustodyV5:
-    root = repository_root.resolve(strict=True)
-    revision = _git(root, "rev-parse", "HEAD")
-    status = _git(root, "status", "--porcelain", "--untracked-files=all")
-    if status:
-        raise EvidenceError(
-            "source_tree_not_clean",
-            "fixture publication requires a clean index and worktree",
-        )
-    return SourceCustodyV5(revision, "clean")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -81,7 +53,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = publish_control_bundle_v5(
                 args.output,
                 args.run_id,
-                source_custody_from_repository_v5(root),
+                root,
             )
             print(
                 f"v5_publication_status={result.terminal_state} "
@@ -98,7 +70,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "model_actions=0 network_actions=0"
             )
         elif args.command == "replay":
-            result = replay_control_bundle_v5(args.bundle)
+            result = replay_control_bundle_v5(
+                args.bundle,
+                args.repository_root.resolve(strict=True),
+            )
             print(
                 f"v5_replay=verified v5_publication_status={result.terminal_state} "
                 f"request_sha256={result.request_sha256} "

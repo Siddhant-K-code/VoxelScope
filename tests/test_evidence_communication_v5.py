@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import ast
+import inspect
 import itertools
 import json
 import random
 import shutil
+import subprocess
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -50,7 +52,42 @@ from voxelscope.evidence_communication_v5_records import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-CUSTODY = SourceCustodyV5("df71bc4c6c68937d3b4e22229e23f2cde315f9c6", "clean")
+IMPLEMENTATION_PATHS = (
+    "research/evidence-communication-v5-discourse-planner-contract-v1/design-contract.json",
+    "research/evidence-communication-v5-discourse-planner-contract-v1/discourse-plan.schema.json",
+    "research/evidence-communication-v5-discourse-planner-contract-v1/discourse-request.schema.json",
+    "research/evidence-communication-v5-discourse-planner-contract-v1/publication-record.schema.json",
+    "src/voxelscope/atomic.py",
+    "src/voxelscope/canonical.py",
+    "src/voxelscope/evidence_communication_v5.py",
+    "src/voxelscope/evidence_communication_v5_cli.py",
+    "src/voxelscope/evidence_communication_v5_records.py",
+    "src/voxelscope/records.py",
+)
+
+
+@pytest.fixture(scope="module")
+def custody_repository(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    repository = tmp_path_factory.mktemp("v5-custody-repository")
+    for relative in IMPLEMENTATION_PATHS:
+        destination = repository / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / relative, destination)
+    commands = (
+        ("init", "--quiet"),
+        ("config", "user.email", "tests@example.invalid"),
+        ("config", "user.name", "VoxelScope tests"),
+        ("add", "--all"),
+        ("commit", "--quiet", "-m", "fixture"),
+    )
+    for command in commands:
+        subprocess.run(
+            ["git", "-C", str(repository), *command],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    return repository
 
 
 def _unit_text(unit: SentenceUnitV5) -> str:
@@ -60,6 +97,16 @@ def _unit_text(unit: SentenceUnitV5) -> str:
 
 def _catalog_digest(catalog: SentenceCatalogV5) -> str:
     return sha256_bytes(canonical_json_bytes(catalog.to_dict()))
+
+
+def _run_git(repository: Path, *arguments: str) -> str:
+    completed = subprocess.run(
+        ["git", "-C", str(repository), *arguments],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return completed.stdout.strip()
 
 
 def _problem(
@@ -519,13 +566,23 @@ def test_plan_rejects_mandatory_omission_and_bad_caveat_placement() -> None:
     assert placement.value.code == "caveat_placement_violation"
 
 
-def test_control_publication_is_byte_identical_and_replayable(tmp_path: Path) -> None:
+def test_control_publication_is_byte_identical_and_replayable(
+    tmp_path: Path,
+    custody_repository: Path,
+) -> None:
     first = tmp_path / "first"
     second = tmp_path / "second"
-    first_result = publish_control_bundle_v5(first, "control-run", CUSTODY)
-    second_result = publish_control_bundle_v5(second, "control-run", CUSTODY)
+    first_result = publish_control_bundle_v5(first, "control-run", custody_repository)
+    second_result = publish_control_bundle_v5(second, "control-run", custody_repository)
 
-    assert first_result == second_result == replay_control_bundle_v5(first)
+    assert (
+        first_result
+        == second_result
+        == replay_control_bundle_v5(
+            first,
+            custody_repository,
+        )
+    )
     assert first_result.optional_utility == 8
     assert first_result.emitted_utf8_bytes == 590
     assert first_result.request_sha256 == (
@@ -545,10 +602,21 @@ def test_control_publication_is_byte_identical_and_replayable(tmp_path: Path) ->
     assert measurement["model_input_tokens"] == NOT_APPLICABLE_NO_MODEL_V5
     assert measurement["model_output_tokens"] == NOT_APPLICABLE_NO_MODEL_V5
     assert measurement["model_latency_ms"] == NOT_APPLICABLE_NO_MODEL_V5
+    manifest = load_json(first / "implementation-manifest.json")
+    assert tuple(item["path"] for item in manifest["files"]) == IMPLEMENTATION_PATHS
+    index = load_json(first / "index.json")
+    assert index["custody"]["source_revision"] == _run_git(custody_repository, "rev-parse", "HEAD")
+    assert index["custody"]["source_root_tree"] == _run_git(
+        custody_repository,
+        "rev-parse",
+        "HEAD^{tree}",
+    )
+    assert load_json(first / "sentence-catalog.json") == control_sentence_catalog_v5().to_dict()
 
 
 def test_eligibility_is_persisted_before_optimizer_action(
     tmp_path: Path,
+    custody_repository: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import voxelscope.evidence_communication_v5 as implementation
@@ -570,12 +638,13 @@ def test_eligibility_is_persisted_before_optimizer_action(
         return original(*args, **kwargs)
 
     monkeypatch.setattr(implementation, "optimize_discourse_plan_v5", checked)
-    publish_control_bundle_v5(output, "eligibility-order", CUSTODY)
+    publish_control_bundle_v5(output, "eligibility-order", custody_repository)
     assert checked_before_publication
 
 
 def test_receipt_is_absent_at_atomic_rename_and_written_last(
     tmp_path: Path,
+    custody_repository: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import voxelscope.evidence_communication_v5 as implementation
@@ -589,18 +658,19 @@ def test_receipt_is_absent_at_atomic_rename_and_written_last(
 
     monkeypatch.setattr(implementation, "rename_no_replace", checked)
     output = tmp_path / "bundle"
-    publish_control_bundle_v5(output, "receipt-last", CUSTODY)
+    publish_control_bundle_v5(output, "receipt-last", custody_repository)
     assert observations == [False]
     assert (output / "receipt.json").is_file()
 
 
 def test_publication_collision_and_symlink_parent_fail_closed(
     tmp_path: Path,
+    custody_repository: Path,
 ) -> None:
     output = tmp_path / "bundle"
-    publish_control_bundle_v5(output, "collision", CUSTODY)
+    publish_control_bundle_v5(output, "collision", custody_repository)
     with pytest.raises(EvidenceError) as collision:
-        publish_control_bundle_v5(output, "collision", CUSTODY)
+        publish_control_bundle_v5(output, "collision", custody_repository)
     assert collision.value.code == "output_exists"
 
     real_parent = tmp_path / "real"
@@ -608,16 +678,206 @@ def test_publication_collision_and_symlink_parent_fail_closed(
     linked_parent = tmp_path / "linked"
     linked_parent.symlink_to(real_parent, target_is_directory=True)
     with pytest.raises(EvidenceError) as symlink:
-        publish_control_bundle_v5(linked_parent / "bundle", "symlink", CUSTODY)
+        publish_control_bundle_v5(
+            linked_parent / "bundle",
+            "symlink",
+            custody_repository,
+        )
     assert symlink.value.code == "symlink_forbidden"
+
+
+def test_publication_api_accepts_only_repository_derived_custody(
+    tmp_path: Path,
+) -> None:
+    parameters = tuple(inspect.signature(publish_control_bundle_v5).parameters)
+    assert parameters == ("output", "run_id", "repository_root")
+    invented = SourceCustodyV5("f" * 40, "e" * 40, "d" * 64, "clean")
+    with pytest.raises(EvidenceError) as error:
+        publish_control_bundle_v5(tmp_path / "bundle", "invented", invented)  # type: ignore[arg-type]
+    assert error.value.code == "unsafe_repository_root"
+
+
+def test_publication_rejects_untracked_source_entries(
+    tmp_path: Path,
+    custody_repository: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    shutil.copytree(custody_repository, repository)
+    (repository / "untracked.txt").write_text("not committed\n")
+    with pytest.raises(EvidenceError) as error:
+        publish_control_bundle_v5(tmp_path / "bundle", "dirty", repository)
+    assert error.value.code == "source_tree_not_clean"
+
+
+def test_replay_rejects_source_revision_and_tree_drift(
+    tmp_path: Path,
+    custody_repository: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    shutil.copytree(custody_repository, repository)
+    bundle = tmp_path / "bundle"
+    publish_control_bundle_v5(bundle, "source-drift", repository)
+    path = repository / "src/voxelscope/evidence_communication_v5_cli.py"
+    path.write_text(path.read_text() + "\n")
+    _run_git(repository, "add", "--all")
+    _run_git(repository, "commit", "--quiet", "-m", "source drift")
+    with pytest.raises(EvidenceError) as error:
+        replay_control_bundle_v5(bundle, repository)
+    assert error.value.code == "source_custody_mismatch"
+
+
+def test_replay_rejects_coordinated_forged_custody(
+    tmp_path: Path,
+    custody_repository: Path,
+) -> None:
+    source = tmp_path / "source"
+    publish_control_bundle_v5(source, "forged-custody", custody_repository)
+    bundle = tmp_path / "forged"
+    shutil.copytree(source, bundle)
+    forged = {
+        "implementation_manifest_sha256": "d" * 64,
+        "source_revision": "f" * 40,
+        "source_root_tree": "e" * 40,
+        "source_tree_state": "clean",
+    }
+    for filename in ("eligibility.json", "index.json", "receipt.json"):
+        value = load_json(bundle / filename)
+        value["custody"] = forged
+        write_json(bundle / filename, value)
+    with pytest.raises(EvidenceError) as error:
+        replay_control_bundle_v5(bundle, custody_repository)
+    assert error.value.code == "source_custody_mismatch"
+
+
+def test_replay_rejects_catalog_and_manifest_tamper(
+    tmp_path: Path,
+    custody_repository: Path,
+) -> None:
+    source = tmp_path / "source"
+    publish_control_bundle_v5(source, "closed-inputs", custody_repository)
+    for filename in ("sentence-catalog.json", "implementation-manifest.json"):
+        bundle = tmp_path / filename
+        shutil.copytree(source, bundle)
+        value = load_json(bundle / filename)
+        value["terminal_state"] = "tampered"
+        write_json(bundle / filename, value)
+        with pytest.raises(EvidenceError):
+            replay_control_bundle_v5(bundle, custody_repository)
+
+
+def test_atomic_collision_preserves_concurrent_destination(
+    tmp_path: Path,
+    custody_repository: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import voxelscope.evidence_communication_v5 as implementation
+
+    original = implementation.rename_no_replace
+    output = tmp_path / "bundle"
+
+    def collide(source: Path, destination: Path) -> None:
+        destination.mkdir()
+        (destination / "owner.txt").write_text("concurrent publisher\n")
+        original(source, destination)
+
+    monkeypatch.setattr(implementation, "rename_no_replace", collide)
+    with pytest.raises(EvidenceError) as error:
+        publish_control_bundle_v5(output, "race", custody_repository)
+    assert error.value.code == "output_exists"
+    assert (output / "owner.txt").read_text() == "concurrent publisher\n"
+    assert not (output / "receipt.json").exists()
+
+
+def test_receipt_failure_leaves_unclosed_bundle(
+    tmp_path: Path,
+    custody_repository: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import voxelscope.evidence_communication_v5 as implementation
+
+    output = tmp_path / "bundle"
+
+    def fail_receipt(path: Path, receipt_bytes: bytes) -> None:
+        del path, receipt_bytes
+        raise OSError("simulated crash before receipt")
+
+    monkeypatch.setattr(implementation, "_write_receipt_exclusive", fail_receipt)
+    with pytest.raises(OSError, match="simulated crash"):
+        publish_control_bundle_v5(output, "unclosed", custody_repository)
+    assert output.is_dir()
+    assert not (output / "receipt.json").exists()
+    with pytest.raises(EvidenceError) as error:
+        replay_control_bundle_v5(output, custody_repository)
+    assert error.value.code == "bundle_file_set_mismatch"
+
+
+def test_publication_fsync_order(
+    tmp_path: Path,
+    custody_repository: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import voxelscope.evidence_communication_v5 as implementation
+
+    output = tmp_path / "bundle"
+    events: list[str] = []
+    original_directory_fsync = implementation._fsync_directory
+    original_rename = implementation.rename_no_replace
+    original_receipt = implementation._write_receipt_exclusive
+
+    def fsync_directory(path: Path) -> None:
+        if path.name.startswith(".bundle.tmp-"):
+            events.append("stage_fsync")
+        elif path == output.parent:
+            events.append("parent_fsync")
+        elif path == output:
+            events.append("output_fsync")
+        original_directory_fsync(path)
+
+    def rename(source: Path, destination: Path) -> None:
+        events.append("rename")
+        original_rename(source, destination)
+
+    def write_receipt(path: Path, receipt_bytes: bytes) -> None:
+        events.append("receipt_write_fsync")
+        original_receipt(path, receipt_bytes)
+
+    monkeypatch.setattr(implementation, "_fsync_directory", fsync_directory)
+    monkeypatch.setattr(implementation, "rename_no_replace", rename)
+    monkeypatch.setattr(implementation, "_write_receipt_exclusive", write_receipt)
+    publish_control_bundle_v5(output, "fsync-order", custody_repository)
+    final_stage_fsync = max(index for index, event in enumerate(events) if event == "stage_fsync")
+    assert events[final_stage_fsync:] == [
+        "stage_fsync",
+        "rename",
+        "parent_fsync",
+        "receipt_write_fsync",
+        "output_fsync",
+    ]
+
+
+def test_publication_rejects_link_like_existing_ancestor(
+    tmp_path: Path,
+    custody_repository: Path,
+) -> None:
+    real = tmp_path / "real"
+    real.mkdir()
+    linked = tmp_path / "linked"
+    linked.symlink_to(real, target_is_directory=True)
+    with pytest.raises(EvidenceError) as error:
+        publish_control_bundle_v5(
+            linked / "missing-parent" / "bundle",
+            "linked-ancestor",
+            custody_repository,
+        )
+    assert error.value.code == "symlink_forbidden"
 
 
 def test_custody_drift_is_rejected() -> None:
     with pytest.raises(EvidenceError) as state:
-        SourceCustodyV5(CUSTODY.source_revision, "dirty")
+        SourceCustodyV5("f" * 40, "e" * 40, "d" * 64, "dirty")
     assert state.value.code == "source_tree_not_clean"
     with pytest.raises(EvidenceError) as revision:
-        SourceCustodyV5("f" * 39, "clean")
+        SourceCustodyV5("f" * 39, "e" * 40, "d" * 64, "clean")
     assert revision.value.code == "invalid_source_revision"
 
 
@@ -638,25 +898,27 @@ def test_custody_drift_is_rejected() -> None:
 )
 def test_every_persisted_record_rejects_terminal_or_identity_tamper(
     tmp_path: Path,
+    custody_repository: Path,
     filename: str,
     field: str,
     value: Any,
 ) -> None:
     source = tmp_path / "source"
-    publish_control_bundle_v5(source, "tamper", CUSTODY)
+    publish_control_bundle_v5(source, "tamper", custody_repository)
     bundle = tmp_path / f"tampered-{filename}"
     shutil.copytree(source, bundle)
     record = load_json(bundle / filename)
     record[field] = value
     write_json(bundle / filename, record)
     with pytest.raises(EvidenceError):
-        replay_control_bundle_v5(bundle)
+        replay_control_bundle_v5(bundle, custody_repository)
 
 
 @pytest.mark.parametrize(
     "filename",
     [
         "eligibility.json",
+        "implementation-manifest.json",
         "index.json",
         "measurement-status.json",
         "optimality-certificate.json",
@@ -665,40 +927,45 @@ def test_every_persisted_record_rejects_terminal_or_identity_tamper(
         "receipt.json",
         "rendered-artifact.json",
         "request.json",
+        "sentence-catalog.json",
         "verification.json",
     ],
 )
 def test_every_persisted_file_is_digest_or_canonicality_closed(
     tmp_path: Path,
+    custody_repository: Path,
     filename: str,
 ) -> None:
     source = tmp_path / "source"
     if not source.exists():
-        publish_control_bundle_v5(source, "digest-tamper", CUSTODY)
+        publish_control_bundle_v5(source, "digest-tamper", custody_repository)
     bundle = tmp_path / f"digest-{filename}"
     shutil.copytree(source, bundle)
     path = bundle / filename
     path.write_bytes(path.read_bytes() + b" ")
     with pytest.raises(EvidenceError):
-        replay_control_bundle_v5(bundle)
+        replay_control_bundle_v5(bundle, custody_repository)
 
 
-def test_bundle_rejects_missing_extra_and_symlink_entries(tmp_path: Path) -> None:
+def test_bundle_rejects_missing_extra_and_symlink_entries(
+    tmp_path: Path,
+    custody_repository: Path,
+) -> None:
     source = tmp_path / "source"
-    publish_control_bundle_v5(source, "file-set", CUSTODY)
+    publish_control_bundle_v5(source, "file-set", custody_repository)
 
     missing = tmp_path / "missing"
     shutil.copytree(source, missing)
     (missing / "plan.json").unlink()
     with pytest.raises(EvidenceError) as missing_error:
-        replay_control_bundle_v5(missing)
+        replay_control_bundle_v5(missing, custody_repository)
     assert missing_error.value.code == "bundle_file_set_mismatch"
 
     extra = tmp_path / "extra"
     shutil.copytree(source, extra)
     (extra / "extra.json").write_text("{}")
     with pytest.raises(EvidenceError) as extra_error:
-        replay_control_bundle_v5(extra)
+        replay_control_bundle_v5(extra, custody_repository)
     assert extra_error.value.code == "bundle_file_set_mismatch"
 
     linked = tmp_path / "linked"
@@ -706,7 +973,7 @@ def test_bundle_rejects_missing_extra_and_symlink_entries(tmp_path: Path) -> Non
     (linked / "plan.json").unlink()
     (linked / "plan.json").symlink_to(source / "plan.json")
     with pytest.raises(EvidenceError) as linked_error:
-        replay_control_bundle_v5(linked)
+        replay_control_bundle_v5(linked, custody_repository)
     assert linked_error.value.code == "symlink_forbidden"
 
 
@@ -747,8 +1014,11 @@ def test_request_parser_rejects_extra_fields() -> None:
         )
 
 
-def test_json_round_trip_remains_canonical(tmp_path: Path) -> None:
+def test_json_round_trip_remains_canonical(
+    tmp_path: Path,
+    custody_repository: Path,
+) -> None:
     output = tmp_path / "bundle"
-    publish_control_bundle_v5(output, "canonical", CUSTODY)
+    publish_control_bundle_v5(output, "canonical", custody_repository)
     for path in output.iterdir():
         assert path.read_bytes() == canonical_json_bytes(json.loads(path.read_text()))

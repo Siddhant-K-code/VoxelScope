@@ -69,6 +69,7 @@ A closed bundle contains exactly:
 
 ```text
 eligibility.json
+implementation-manifest.json
 index.json
 measurement-status.json
 optimality-certificate.json
@@ -77,21 +78,50 @@ publication.json
 receipt.json
 rendered-artifact.json
 request.json
+sentence-catalog.json
 verification.json
 ```
 
-The request and eligibility record are written first. The remaining records are
-generated from the exact winner, all staged records are independently
-reconstructed, every file is fsynced, and the staging directory is atomically
-renamed without replacement. `receipt.json` is then created with exclusive
-no-clobber semantics and fsynced last.
+Core publication accepts a repository root, not caller-asserted custody. Before
+writing eligibility it requires a clean Git index and worktree, including no
+untracked entries, and derives the exact `HEAD` commit, root Git tree, and a
+canonical implementation-manifest identity. The manifest closes these files:
+
+```text
+src/voxelscope/atomic.py
+src/voxelscope/canonical.py
+src/voxelscope/evidence_communication_v5.py
+src/voxelscope/evidence_communication_v5_cli.py
+src/voxelscope/evidence_communication_v5_records.py
+src/voxelscope/records.py
+research/evidence-communication-v5-discourse-planner-contract-v1/design-contract.json
+research/evidence-communication-v5-discourse-planner-contract-v1/discourse-plan.schema.json
+research/evidence-communication-v5-discourse-planner-contract-v1/discourse-request.schema.json
+research/evidence-communication-v5-discourse-planner-contract-v1/publication-record.schema.json
+```
+
+`sentence-catalog.json` closes every code-owned sentence and citation used by the
+renderer. Replay parses it strictly, verifies the request-pinned digest, and
+requires both the catalog and implementation manifest to equal the code-owned
+inputs in the exact recorded checkout.
+
+The request, catalog, implementation manifest, and eligibility record are
+written before optimization. The remaining records are generated from the exact
+winner and all staged records are independently reconstructed. Publication then
+fsyncs every staged file and the staging directory, atomically renames without
+replacement, fsyncs the destination parent directory, exclusively creates and
+fsyncs `receipt.json`, and finally fsyncs the output directory. A crash before
+the receipt leaves an unclosed bundle that replay refuses.
 
 Replay rejects missing or extra files, noncanonical JSON, unknown or duplicate
 IDs, identity drift, profile drift, custody drift, terminal-state drift, digest
 tampering, symlinks, ordering cycles, bad anchors or placements, infeasible
 budgets, nonoptimal plans, and publication collisions. Replay reconstructs the
 code-owned request, optimizer winner and certificate, rendering, metrics/status,
-verification, index, and receipt without network or a model.
+verification, index, and receipt without network or a model. It first rederives
+custody from the supplied repository root and requires exact equality with the
+stored commit, root tree, and manifest identity. Historical replay therefore
+requires checkout of the exact recorded revision.
 
 ## CLI
 
@@ -111,14 +141,16 @@ python -m voxelscope.evidence_communication_v5_cli fixture-compile \
   --output build/evidence-communication-v5-control
 ```
 
-The compile command obtains the exact Git revision itself and refuses a dirty
-index or worktree. The output is contract/test evidence, never observed model
-evidence.
+The compile command derives custody inside the trusted core and refuses a dirty
+index or worktree. Its publication optimizer limit is fixed to the contract
+default; only the standalone optimizer API accepts custom limits for fail-closed
+unit tests. The output is contract/test evidence, never observed model evidence.
 
 Replay the closed bundle offline:
 
 ```bash
 python -m voxelscope.evidence_communication_v5_cli replay \
+  --repository-root . \
   --bundle build/evidence-communication-v5-control
 ```
 

@@ -9,6 +9,7 @@ import itertools
 import math
 import os
 import shutil
+import subprocess
 import tempfile
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -19,9 +20,11 @@ from .atomic import path_occupied, rename_no_replace
 from .canonical import (
     EvidenceError,
     canonical_json_bytes,
+    ensure_no_symlink,
     is_link_like,
     load_json,
     require_sha256,
+    safe_relative_path,
     sha256_bytes,
     sha256_file,
     write_json,
@@ -30,6 +33,7 @@ from .evidence_communication_v5_records import (
     AUDIENCE_PROFILE_V5,
     CATALOG_SCHEMA_V5,
     ELIGIBILITY_SCHEMA_V5,
+    IMPLEMENTATION_MANIFEST_SCHEMA_V5,
     INDEX_SCHEMA_V5,
     MEASUREMENT_SCHEMA_V5,
     MODEL_ELIGIBILITY_STATUS_V5,
@@ -50,6 +54,8 @@ from .evidence_communication_v5_records import (
     DiscoursePlanV5,
     DiscourseRequestV5,
     EligibilityRecordV5,
+    ImplementationFileV5,
+    ImplementationManifestV5,
     MeasurementStatusV5,
     OptimalityCertificateV5,
     OptionalUnitV5,
@@ -112,16 +118,34 @@ HARD_MAX_CANDIDATE_EVALUATIONS_V5 = 1_000_000
 
 _CORE_FILES = {
     "eligibility.json": "eligibility_record",
+    "implementation-manifest.json": "implementation_manifest",
     "measurement-status.json": "measurement_status",
     "optimality-certificate.json": "optimality_certificate",
     "plan.json": "discourse_plan",
     "publication.json": "publication_record",
     "rendered-artifact.json": "rendered_artifact",
     "request.json": "discourse_request",
+    "sentence-catalog.json": "sentence_catalog",
     "verification.json": "verification_record",
 }
 _STAGED_FILES = frozenset((*_CORE_FILES, "index.json"))
 _CLOSED_FILES = frozenset((*_STAGED_FILES, "receipt.json"))
+_IMPLEMENTATION_PATHS = tuple(
+    sorted(
+        (
+            "research/evidence-communication-v5-discourse-planner-contract-v1/design-contract.json",
+            "research/evidence-communication-v5-discourse-planner-contract-v1/discourse-plan.schema.json",
+            "research/evidence-communication-v5-discourse-planner-contract-v1/discourse-request.schema.json",
+            "research/evidence-communication-v5-discourse-planner-contract-v1/publication-record.schema.json",
+            "src/voxelscope/atomic.py",
+            "src/voxelscope/canonical.py",
+            "src/voxelscope/evidence_communication_v5.py",
+            "src/voxelscope/evidence_communication_v5_cli.py",
+            "src/voxelscope/evidence_communication_v5_records.py",
+            "src/voxelscope/records.py",
+        )
+    )
+)
 
 
 @dataclass(frozen=True)
@@ -157,6 +181,8 @@ class _RenderedCandidateV5:
 @dataclass(frozen=True)
 class _BuiltRecordsV5:
     request: DiscourseRequestV5
+    catalog: SentenceCatalogV5
+    implementation_manifest: ImplementationManifestV5
     eligibility: EligibilityRecordV5
     plan: DiscoursePlanV5
     certificate: OptimalityCertificateV5
@@ -169,6 +195,104 @@ class _BuiltRecordsV5:
 
 def _catalog_digest(catalog: SentenceCatalogV5) -> str:
     return sha256_bytes(canonical_json_bytes(catalog.to_dict()))
+
+
+def _implementation_manifest_digest(manifest: ImplementationManifestV5) -> str:
+    return sha256_bytes(canonical_json_bytes(manifest.to_dict()))
+
+
+def _git(repository_root: Path, *arguments: str) -> str:
+    completed = subprocess.run(
+        ["git", "-C", str(repository_root), *arguments],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise EvidenceError(
+            "source_custody_unavailable",
+            completed.stderr.strip() or "git command failed",
+        )
+    return completed.stdout.strip()
+
+
+def _build_implementation_manifest_v5(
+    repository_root: Path,
+) -> ImplementationManifestV5:
+    files: list[ImplementationFileV5] = []
+    for value in _IMPLEMENTATION_PATHS:
+        relative = safe_relative_path(value)
+        path = ensure_no_symlink(repository_root, relative)
+        if not path.is_file():
+            raise EvidenceError("missing_implementation_file", value)
+        files.append(ImplementationFileV5(value, sha256_file(path)))
+    return ImplementationManifestV5(
+        schema_version=IMPLEMENTATION_MANIFEST_SCHEMA_V5,
+        files=tuple(files),
+        terminal_state="closed",
+    )
+
+
+def _derive_repository_custody_v5(
+    repository_root: Path,
+) -> tuple[SourceCustodyV5, ImplementationManifestV5]:
+    if not isinstance(repository_root, Path) or is_link_like(repository_root):
+        raise EvidenceError(
+            "unsafe_repository_root",
+            "repository root must be a non-link-like Path",
+        )
+    try:
+        root = repository_root.resolve(strict=True)
+    except OSError as exc:
+        raise EvidenceError("unsafe_repository_root", str(repository_root)) from exc
+    if not root.is_dir():
+        raise EvidenceError("unsafe_repository_root", str(root))
+    top_level = Path(_git(root, "rev-parse", "--show-toplevel")).resolve(strict=True)
+    if top_level != root:
+        raise EvidenceError("repository_root_mismatch", str(repository_root))
+    status = _git(
+        root,
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+        "--ignore-submodules=none",
+    )
+    if status:
+        raise EvidenceError(
+            "source_tree_not_clean",
+            "publication and replay require a clean index and worktree",
+        )
+    revision = _git(root, "rev-parse", "HEAD")
+    root_tree = _git(root, "rev-parse", "HEAD^{tree}")
+    manifest = _build_implementation_manifest_v5(root)
+    final_status = _git(
+        root,
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+        "--ignore-submodules=none",
+    )
+    if final_status:
+        raise EvidenceError(
+            "source_tree_not_clean",
+            "source custody changed while deriving the implementation manifest",
+        )
+    if revision != _git(root, "rev-parse", "HEAD") or root_tree != _git(
+        root,
+        "rev-parse",
+        "HEAD^{tree}",
+    ):
+        raise EvidenceError(
+            "source_custody_changed",
+            "HEAD changed while deriving source custody",
+        )
+    custody = SourceCustodyV5(
+        source_revision=revision,
+        source_root_tree=root_tree,
+        implementation_manifest_sha256=_implementation_manifest_digest(manifest),
+        source_tree_state="clean",
+    )
+    return custody, manifest
 
 
 def _request_digest(request: DiscourseRequestV5) -> str:
@@ -740,7 +864,7 @@ def optimize_discourse_plan_v5(
     return OptimizationResultV5(winning_plan, certificate)
 
 
-def build_eligibility_record_v5(
+def _build_eligibility_record_v5(
     request: DiscourseRequestV5,
     custody: SourceCustodyV5,
 ) -> EligibilityRecordV5:
@@ -782,6 +906,7 @@ def _build_records_v5(
     run_id: str,
     request: DiscourseRequestV5,
     catalog: SentenceCatalogV5,
+    implementation_manifest: ImplementationManifestV5,
     custody: SourceCustodyV5,
     eligibility: EligibilityRecordV5,
     optimization: OptimizationResultV5,
@@ -855,6 +980,10 @@ def _build_records_v5(
     verification_sha256 = sha256_bytes(canonical_json_bytes(verification.to_dict()))
     core_values: dict[str, tuple[str, dict[str, Any]]] = {
         "eligibility.json": ("eligibility_record", eligibility.to_dict()),
+        "implementation-manifest.json": (
+            "implementation_manifest",
+            implementation_manifest.to_dict(),
+        ),
         "measurement-status.json": ("measurement_status", measurement.to_dict()),
         "optimality-certificate.json": (
             "optimality_certificate",
@@ -864,6 +993,7 @@ def _build_records_v5(
         "publication.json": ("publication_record", publication.to_dict()),
         "rendered-artifact.json": ("rendered_artifact", rendered.to_dict()),
         "request.json": ("discourse_request", request.to_dict()),
+        "sentence-catalog.json": ("sentence_catalog", catalog.to_dict()),
         "verification.json": ("verification_record", verification.to_dict()),
     }
     files = _publication_files(core_values)
@@ -884,6 +1014,8 @@ def _build_records_v5(
     )
     return _BuiltRecordsV5(
         request=request,
+        catalog=catalog,
+        implementation_manifest=implementation_manifest,
         eligibility=eligibility,
         plan=plan,
         certificate=certificate,
@@ -898,6 +1030,7 @@ def _build_records_v5(
 def _record_values(records: _BuiltRecordsV5) -> dict[str, dict[str, Any]]:
     return {
         "eligibility.json": records.eligibility.to_dict(),
+        "implementation-manifest.json": records.implementation_manifest.to_dict(),
         "index.json": records.index.to_dict(),
         "measurement-status.json": records.measurement.to_dict(),
         "optimality-certificate.json": records.certificate.to_dict(),
@@ -905,6 +1038,7 @@ def _record_values(records: _BuiltRecordsV5) -> dict[str, dict[str, Any]]:
         "publication.json": records.publication.to_dict(),
         "rendered-artifact.json": records.rendered.to_dict(),
         "request.json": records.request.to_dict(),
+        "sentence-catalog.json": records.catalog.to_dict(),
         "verification.json": records.verification.to_dict(),
     }
 
@@ -943,6 +1077,15 @@ def _load_records_v5(bundle: Path) -> _BuiltRecordsV5:
     )
     return _BuiltRecordsV5(
         request=request,
+        catalog=SentenceCatalogV5.from_dict(
+            require_object(load_json(bundle / "sentence-catalog.json"), "sentence catalog")
+        ),
+        implementation_manifest=ImplementationManifestV5.from_dict(
+            require_object(
+                load_json(bundle / "implementation-manifest.json"),
+                "implementation manifest",
+            )
+        ),
         eligibility=EligibilityRecordV5.from_dict(
             require_object(load_json(bundle / "eligibility.json"), "eligibility record")
         ),
@@ -979,25 +1122,61 @@ def _load_records_v5(bundle: Path) -> _BuiltRecordsV5:
     )
 
 
-def _rebuild_records_v5(records: _BuiltRecordsV5) -> _BuiltRecordsV5:
-    catalog = _trusted_catalog_for_request(records.request)
+def _rebuild_records_v5(
+    records: _BuiltRecordsV5,
+    expected_custody: SourceCustodyV5,
+    expected_manifest: ImplementationManifestV5,
+) -> _BuiltRecordsV5:
+    if records.index.custody != expected_custody:
+        raise EvidenceError("source_custody_mismatch", "index custody does not match checkout")
+    if records.eligibility.custody != expected_custody:
+        raise EvidenceError(
+            "source_custody_mismatch",
+            "eligibility custody does not match checkout",
+        )
+    if records.implementation_manifest != expected_manifest:
+        raise EvidenceError(
+            "implementation_manifest_mismatch",
+            "persisted manifest does not match checkout",
+        )
+    if (
+        _implementation_manifest_digest(records.implementation_manifest)
+        != expected_custody.implementation_manifest_sha256
+    ):
+        raise EvidenceError(
+            "implementation_manifest_digest_mismatch",
+            expected_custody.implementation_manifest_sha256,
+        )
+    catalog = records.catalog
+    if catalog != control_sentence_catalog_v5():
+        raise EvidenceError(
+            "sentence_catalog_mismatch",
+            "persisted catalog does not match code-owned catalog",
+        )
     expected_request = control_discourse_request_v5(catalog)
     if records.request != expected_request:
         raise EvidenceError("request_replay_mismatch", records.request.case_id)
-    expected_eligibility = build_eligibility_record_v5(
+    if _catalog_digest(catalog) != records.request.sentence_catalog_sha256:
+        raise EvidenceError(
+            "sentence_catalog_digest_mismatch",
+            records.request.sentence_catalog_sha256,
+        )
+    if records.certificate.max_candidate_evaluations != DEFAULT_MAX_CANDIDATE_EVALUATIONS_V5:
+        raise EvidenceError(
+            "publication_optimizer_limit_mismatch",
+            str(records.certificate.max_candidate_evaluations),
+        )
+    expected_eligibility = _build_eligibility_record_v5(
         expected_request,
-        records.index.custody,
+        expected_custody,
     )
-    optimization = optimize_discourse_plan_v5(
-        expected_request,
-        catalog,
-        max_candidate_evaluations=records.certificate.max_candidate_evaluations,
-    )
+    optimization = optimize_discourse_plan_v5(expected_request, catalog)
     return _build_records_v5(
         records.publication.run_id,
         expected_request,
         catalog,
-        records.index.custody,
+        expected_manifest,
+        expected_custody,
         expected_eligibility,
         optimization,
     )
@@ -1024,7 +1203,11 @@ def _validate_directory_entries(
 def _verify_staged_records_v5(stage: Path, expected_records: _BuiltRecordsV5) -> None:
     _validate_directory_entries(stage, _STAGED_FILES)
     stored = _load_records_v5(stage)
-    rebuilt = _rebuild_records_v5(stored)
+    rebuilt = _rebuild_records_v5(
+        stored,
+        expected_records.index.custody,
+        expected_records.implementation_manifest,
+    )
     if stored != rebuilt or stored != expected_records:
         raise EvidenceError("publication_replay_mismatch", stored.publication.run_id)
     values = _record_values(stored)
@@ -1087,44 +1270,100 @@ def _fsync_directory(path: Path) -> None:
         os.close(descriptor)
 
 
-def _reject_link_like_parent(path: Path) -> None:
-    if is_link_like(path):
-        raise EvidenceError("symlink_forbidden", str(path))
+def _reject_link_like_existing_ancestors(path: Path) -> None:
+    current = path.absolute()
+    ancestors: list[Path] = []
+    while True:
+        ancestors.append(current)
+        if current.parent == current:
+            break
+        current = current.parent
+    for ancestor in reversed(ancestors):
+        if is_link_like(ancestor):
+            raise EvidenceError("symlink_forbidden", str(ancestor))
+
+
+def _require_output_outside_or_ignored(output: Path, repository_root: Path) -> None:
+    try:
+        relative = output.absolute().relative_to(repository_root)
+    except ValueError:
+        return
+    completed = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repository_root),
+            "check-ignore",
+            "--no-index",
+            "--quiet",
+            str(relative),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode == 1:
+        raise EvidenceError(
+            "publication_would_dirty_source_tree",
+            str(relative),
+        )
+    if completed.returncode != 0:
+        raise EvidenceError(
+            "source_custody_unavailable",
+            completed.stderr.strip() or "git check-ignore failed",
+        )
+
+
+def _write_receipt_exclusive(path: Path, receipt_bytes: bytes) -> None:
+    try:
+        with path.open("xb") as stream:
+            stream.write(receipt_bytes)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except FileExistsError as exc:
+        raise EvidenceError("output_exists", str(path)) from exc
 
 
 def publish_control_bundle_v5(
     output: Path,
     run_id: str,
-    custody: SourceCustodyV5,
-    *,
-    max_candidate_evaluations: int = DEFAULT_MAX_CANDIDATE_EVALUATIONS_V5,
+    repository_root: Path,
 ) -> PublicationBuildResultV5:
     """Publish the code-owned control bundle with the immutable receipt last."""
+    custody, implementation_manifest = _derive_repository_custody_v5(repository_root)
     if path_occupied(output):
         raise EvidenceError("output_exists", str(output))
+    _reject_link_like_existing_ancestors(output.parent)
+    _require_output_outside_or_ignored(
+        output,
+        repository_root.resolve(strict=True),
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
-    _reject_link_like_parent(output.parent)
     catalog = control_sentence_catalog_v5()
     request = control_discourse_request_v5(catalog)
-    eligibility = build_eligibility_record_v5(request, custody)
+    eligibility = _build_eligibility_record_v5(request, custody)
     stage = Path(tempfile.mkdtemp(prefix=f".{output.name}.tmp-", dir=output.parent))
     published = False
     try:
         write_json(stage / "request.json", request.to_dict())
+        write_json(stage / "sentence-catalog.json", catalog.to_dict())
+        write_json(
+            stage / "implementation-manifest.json",
+            implementation_manifest.to_dict(),
+        )
         write_json(stage / "eligibility.json", eligibility.to_dict())
         _fsync_file(stage / "request.json")
+        _fsync_file(stage / "sentence-catalog.json")
+        _fsync_file(stage / "implementation-manifest.json")
         _fsync_file(stage / "eligibility.json")
         _fsync_directory(stage)
 
-        optimization = optimize_discourse_plan_v5(
-            request,
-            catalog,
-            max_candidate_evaluations=max_candidate_evaluations,
-        )
+        optimization = optimize_discourse_plan_v5(request, catalog)
         records = _build_records_v5(
             run_id,
             request,
             catalog,
+            implementation_manifest,
             custody,
             eligibility,
             optimization,
@@ -1140,16 +1379,10 @@ def publish_control_bundle_v5(
         receipt_bytes = canonical_json_bytes(receipt.to_dict())
         rename_no_replace(stage, output)
         published = True
-        receipt_path = output / "receipt.json"
-        try:
-            with receipt_path.open("xb") as stream:
-                stream.write(receipt_bytes)
-                stream.flush()
-                os.fsync(stream.fileno())
-        except FileExistsError as exc:
-            raise EvidenceError("output_exists", str(receipt_path)) from exc
+        _fsync_directory(output.parent)
+        _write_receipt_exclusive(output / "receipt.json", receipt_bytes)
         _fsync_directory(output)
-        replay_control_bundle_v5(output)
+        replay_control_bundle_v5(output, repository_root)
         return PublicationBuildResultV5(
             request_sha256=records.index.request_sha256,
             plan_sha256=records.index.plan_sha256,
@@ -1164,14 +1397,23 @@ def publish_control_bundle_v5(
             shutil.rmtree(stage)
 
 
-def replay_control_bundle_v5(bundle: Path) -> PublicationBuildResultV5:
+def replay_control_bundle_v5(
+    bundle: Path,
+    repository_root: Path,
+) -> PublicationBuildResultV5:
     """Reconstruct every v5 record byte-for-byte without network or a model."""
+    custody, implementation_manifest = _derive_repository_custody_v5(repository_root)
     _validate_directory_entries(bundle, _CLOSED_FILES)
     receipt = PublicationReceiptV5.from_dict(
         require_object(load_json(bundle / "receipt.json"), "publication receipt")
     )
+    if receipt.custody != custody:
+        raise EvidenceError(
+            "source_custody_mismatch",
+            "receipt custody does not match checkout",
+        )
     records = _load_records_v5(bundle)
-    rebuilt = _rebuild_records_v5(records)
+    rebuilt = _rebuild_records_v5(records, custody, implementation_manifest)
     if records != rebuilt:
         raise EvidenceError("publication_replay_mismatch", receipt.run_id)
     expected_receipt = _receipt_for_records(rebuilt)
