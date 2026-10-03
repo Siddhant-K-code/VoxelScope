@@ -10,10 +10,15 @@ clinical, biomedical, model-quality, or model-safety evaluation.
 The source study remains
 `research/gbm-evidence-communication-qwen3-8b-q8-study-v4/`, whose current `main`
 Git tree is `328d8785b475dcd9dbf0b7a62dd4553542b335f2`. The audit independently
-checks its 101-file manifest SHA-256
-`1afe1d31613b0087b6d3d1ac9c8abbc279a58da07ca9b3dbda6845cca56aafd1`,
-the declaration, benchmark report, index, receipt, every receipt-closed run file,
-and a complete offline v4 replay before reading draft text.
+resolves and verifies that actual tree, checks its 101 canonical Git
+`{path, mode, blob}` entries against manifest SHA-256
+`da50890729426b979e36efff26d5a515152a9d2f90851960bdb74b16608f2f4c`,
+requires a clean index, and hashes each checked-out file through Git's
+path-specific normalization before analysis. This accepts LF/CRLF-equivalent text
+checkouts while still refusing changed text, any changed binary byte, symlinks,
+and missing, extra, staged, or untracked files. The declaration, benchmark report,
+index, receipt, every receipt-closed run file, and a complete offline v4 replay
+are then verified before draft text is read.
 
 ## Method
 
@@ -36,7 +41,9 @@ The canonical [`audit.json`](audit.json) stores no raw draft prose. Each of its 
 entry records stores the draft-text SHA-256 and size, run/case/request/skeleton
 identity, source record digests, claim context, verifier label, matched terms,
 deterministic context features, category, and reason code. Its SHA-256 is
-`14b6cf1096139194521fd6ebfafd3d617f440d30155d905df013165837d72839`.
+`a5735aad10d496950429282613cf15f04bb00bef7f773eda874979224c5f8573`.
+The audit implementation identity is its Git-normalized blob identity rather than
+an operating-system-dependent checkout-byte digest.
 
 ## Recomputed findings
 
@@ -65,6 +72,7 @@ The observed benchmark facts remain distinct from the post-hoc categories:
 | `affirmative_clinical_process_statement` | `4` |
 | `ambiguous_or_context_dependent` | `92` |
 
+No entry had both the explicit-negation and affirmative-process context features.
 The overlapping raw substring features occurred more often than the winning v4
 labels because the original verifier stops at the first reason: `diagnos` matched
 84 entries, `recommend` 32, ` caus` 33, `definitive` 12, and `treatment` 3.
@@ -88,6 +96,7 @@ uv run python -m voxelscope.evidence_communication_v4_audit_cli recompute \
   --output build/v4-lexical-audit.json
 ```
 
-Both commands fail closed on source-tree drift, missing or extra study files,
-receipt/digest or replay failure, schema drift, missing or extra audit fields,
-unclassified contexts, and any expected count disagreement.
+Both commands fail closed on Git tree/blob/index or worktree drift, missing or
+extra study files, symlinks, receipt/digest or replay failure, schema drift,
+changed canonical assertions, missing or extra audit fields, unclassified
+contexts, and any expected count disagreement.

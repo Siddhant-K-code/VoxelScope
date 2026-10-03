@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import subprocess
 import tempfile
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -14,8 +15,8 @@ from .canonical import (
     is_link_like,
     load_json,
     require_sha256,
+    safe_relative_path,
     sha256_bytes,
-    sha256_file,
     write_json,
 )
 from .evidence_benchmark_records import MeasurementValue
@@ -53,7 +54,9 @@ V4_FIXTURE_RELATIVE_PATH = (
 )
 
 SOURCE_STUDY_FILE_COUNT = 101
-SOURCE_STUDY_MANIFEST_SHA256 = "1afe1d31613b0087b6d3d1ac9c8abbc279a58da07ca9b3dbda6845cca56aafd1"
+SOURCE_STUDY_GIT_BLOB_MANIFEST_SHA256 = (
+    "da50890729426b979e36efff26d5a515152a9d2f90851960bdb74b16608f2f4c"
+)
 SOURCE_STUDY_GIT_TREE_SHA1 = "328d8785b475dcd9dbf0b7a62dd4553542b335f2"
 DECLARATION_SHA256 = "063b6055d430f14637d3dab05d1471cfc8e2fcf043b4030c633a956eff94a6c6"
 BENCHMARK_REPORT_SHA256 = "86c1c86f62fda175dd121d84785bbb6ed5e11b216cb0383e9b7fcf0290fac409"
@@ -186,54 +189,236 @@ _EXPECTED_REASON_COUNTS = {
     "prohibited_diagnostic_or_prognostic_language": 84,
     "prohibited_treatment_language": 15,
 }
+_EXPECTED_ALL_MATCHED_TERM_COUNTS = {
+    " caus": 33,
+    "definitive": 12,
+    "diagnos": 84,
+    "recommend": 32,
+    "treatment": 3,
+}
+_EXPECTED_WINNING_MATCHED_TERM_COUNTS = {
+    " caus": 9,
+    "diagnos": 84,
+    "recommend": 12,
+    "treatment": 3,
+}
+_EXPECTED_CATEGORY_BY_REASON = {
+    "affirmative_clinical_process_statement": {
+        "prohibited_diagnostic_or_prognostic_language": 2,
+        "prohibited_treatment_language": 2,
+    },
+    "ambiguous_or_context_dependent": {
+        "prohibited_causal_or_certainty_language": 9,
+        "prohibited_diagnostic_or_prognostic_language": 70,
+        "prohibited_treatment_language": 13,
+    },
+    "explicit_negation_or_boundary_disclaimer": {
+        "prohibited_diagnostic_or_prognostic_language": 12,
+    },
+}
+_EXPECTED_ANALYSIS_BOUNDARY = {
+    "classification_is_substantive_safety_truth": False,
+    "generated_benchmark_modified": False,
+    "model_inference_performed": False,
+    "raw_draft_text_republished": False,
+    "scope": "post_hoc_mechanical_classification_of_frozen_lexical_exclusions",
+}
+_EXPECTED_CLASSIFIER_PRECEDENCE = [
+    "explicit_negation_or_boundary_disclaimer",
+    "affirmative_clinical_process_statement",
+    "ambiguous_or_context_dependent",
+]
+_EXPECTED_REASON_CODE_BY_CATEGORY = {
+    "affirmative_clinical_process_statement": (
+        "affirmative_diagnostic_or_treatment_process_description"
+    ),
+    "ambiguous_or_context_dependent": ("hedged_investigative_or_context_dependent_usage"),
+    "explicit_negation_or_boundary_disclaimer": (
+        "explicit_negation_of_diagnostic_or_definitive_conclusion"
+    ),
+}
+_KNOWN_CONTEXT_FEATURES = frozenset(name for name, _ in _CONTEXT_FEATURES)
+_VERIFIER_TERMS_BY_REASON = dict(_VERIFIER_TERMS)
+_KNOWN_VERIFIER_TERMS = frozenset(term for _, terms in _VERIFIER_TERMS for term in terms)
+_EXPECTED_CUSTODY = {
+    "benchmark_closed_file_count": 93,
+    "benchmark_replay": "verified_offline",
+    "parsed_draft_count": 18,
+    "run_count": 18,
+    "source_tree_verified_before_analysis": True,
+}
+_EXPECTED_INTERPRETATION = {
+    "benchmark_facts_are_observed_synthetic_results": True,
+    "categories_are_post_hoc_mechanical_labels": True,
+    "clinical_or_biomedical_claim": False,
+    "model_quality_or_safety_claim": False,
+    "reason": (
+        "Lexical matches and deterministic context features do not establish "
+        "whether draft text is substantively safe or unsafe."
+    ),
+    "v4_result_reinterpreted_or_overwritten": False,
+}
 
 
-def _study_manifest(study_root: Path) -> tuple[list[dict[str, str]], str]:
+def _git(repository_root: Path, *arguments: str) -> bytes:
+    completed = subprocess.run(
+        ["git", *arguments],
+        cwd=repository_root,
+        check=False,
+        capture_output=True,
+    )
+    if completed.returncode != 0:
+        raise EvidenceError(
+            "git_custody_command_failed",
+            f"git {' '.join(arguments)} failed",
+        )
+    return completed.stdout
+
+
+def _require_git_sha1(value: str, name: str) -> None:
+    if len(value) != 40 or any(character not in "0123456789abcdef" for character in value):
+        raise EvidenceError("invalid_git_sha1", name)
+
+
+def _git_tree_entries(
+    repository_root: Path,
+    relative_path: str,
+) -> tuple[str, list[dict[str, str]]]:
+    root = repository_root.resolve()
+    relative = safe_relative_path(relative_path).as_posix()
+    tree_sha1 = _git(root, "rev-parse", f"HEAD:{relative}").decode("ascii").strip()
+    _require_git_sha1(tree_sha1, "git_tree_sha1")
+    prefix = f"{relative}/"
+    entries: list[dict[str, str]] = []
+    for raw_entry in _git(root, "ls-tree", "-r", "-z", "HEAD", "--", relative).split(b"\0"):
+        if not raw_entry:
+            continue
+        metadata, raw_path = raw_entry.split(b"\t", 1)
+        mode, object_type, git_blob_sha1 = metadata.decode("ascii").split()
+        path = raw_path.decode("utf-8")
+        if object_type != "blob" or not path.startswith(prefix):
+            raise EvidenceError("invalid_git_tree_entry", path)
+        if mode == "120000":
+            raise EvidenceError("symlink_forbidden", path)
+        _require_git_sha1(git_blob_sha1, "git_blob_sha1")
+        entries.append(
+            {
+                "git_blob_sha1": git_blob_sha1,
+                "mode": mode,
+                "path": path.removeprefix(prefix),
+            }
+        )
+    return tree_sha1, entries
+
+
+def git_tree_identity(repository_root: Path, relative_path: str) -> dict[str, Any]:
+    relative = safe_relative_path(relative_path).as_posix()
+    tree_sha1, entries = _git_tree_entries(repository_root, relative)
+    return {
+        "git_blob_manifest_sha256": sha256_bytes(canonical_json_bytes(entries)),
+        "git_tree_sha1": tree_sha1,
+        "path": relative,
+        "tracked_file_count": len(entries),
+        "worktree_status": "git_blob_equivalent_clean",
+    }
+
+
+def verify_git_tree_custody(
+    repository_root: Path,
+    relative_path: str,
+    *,
+    expected_tree_sha1: str,
+    expected_file_count: int,
+    expected_blob_manifest_sha256: str,
+) -> dict[str, Any]:
+    root = repository_root.resolve()
+    relative = safe_relative_path(relative_path).as_posix()
+    study_root = root / relative
     if is_link_like(study_root) or not study_root.is_dir():
-        raise EvidenceError("unsafe_source_study", str(study_root))
-    files: list[dict[str, str]] = []
+        raise EvidenceError("unsafe_source_study", relative)
+    actual_files: set[str] = set()
     for path in sorted(study_root.rglob("*")):
         if is_link_like(path):
-            raise EvidenceError("symlink_forbidden", str(path))
+            raise EvidenceError("symlink_forbidden", path.relative_to(root).as_posix())
         if path.is_dir():
             continue
         if not path.is_file():
-            raise EvidenceError("unsafe_source_study_entry", str(path))
-        files.append(
-            {
-                "path": path.relative_to(study_root).as_posix(),
-                "sha256": sha256_file(path),
-            }
+            raise EvidenceError(
+                "unsafe_source_study_entry",
+                path.relative_to(root).as_posix(),
+            )
+        actual_files.add(path.relative_to(study_root).as_posix())
+    index_check = subprocess.run(
+        ["git", "diff", "--cached", "--quiet", "HEAD", "--", relative],
+        cwd=root,
+        check=False,
+        capture_output=True,
+    )
+    if index_check.returncode not in {0, 1}:
+        raise EvidenceError("git_custody_command_failed", "git diff --cached failed")
+    if index_check.returncode == 1:
+        raise EvidenceError(
+            "source_study_index_drift",
+            relative,
         )
-    return files, sha256_bytes(canonical_json_bytes(files))
+    _, entries = _git_tree_entries(root, relative)
+    expected_files = {entry["path"] for entry in entries}
+    if actual_files != expected_files:
+        raise EvidenceError("source_study_worktree_drift", relative)
+    for entry in entries:
+        repository_relative_path = f"{relative}/{entry['path']}"
+        worktree_blob_sha1 = (
+            _git(
+                root,
+                "hash-object",
+                f"--path={repository_relative_path}",
+                repository_relative_path,
+            )
+            .decode("ascii")
+            .strip()
+        )
+        _require_git_sha1(worktree_blob_sha1, "worktree_git_blob_sha1")
+        if worktree_blob_sha1 != entry["git_blob_sha1"]:
+            raise EvidenceError("source_study_worktree_drift", repository_relative_path)
+    identity = git_tree_identity(root, relative)
+    if identity != {
+        "git_blob_manifest_sha256": expected_blob_manifest_sha256,
+        "git_tree_sha1": expected_tree_sha1,
+        "path": relative,
+        "tracked_file_count": expected_file_count,
+        "worktree_status": "git_blob_equivalent_clean",
+    }:
+        raise EvidenceError(
+            "source_study_git_identity_drift",
+            relative,
+        )
+    return identity
 
 
 def verify_source_study_tree(repository_root: Path) -> dict[str, Any]:
-    study_root = repository_root / SOURCE_STUDY_RELATIVE_PATH
-    files, manifest_sha256 = _study_manifest(study_root)
-    if len(files) != SOURCE_STUDY_FILE_COUNT or manifest_sha256 != SOURCE_STUDY_MANIFEST_SHA256:
-        raise EvidenceError(
-            "source_study_tree_drift",
-            f"expected files={SOURCE_STUDY_FILE_COUNT} "
-            f"manifest={SOURCE_STUDY_MANIFEST_SHA256}; "
-            f"observed files={len(files)} manifest={manifest_sha256}",
+    return verify_git_tree_custody(
+        repository_root,
+        SOURCE_STUDY_RELATIVE_PATH,
+        expected_tree_sha1=SOURCE_STUDY_GIT_TREE_SHA1,
+        expected_file_count=SOURCE_STUDY_FILE_COUNT,
+        expected_blob_manifest_sha256=SOURCE_STUDY_GIT_BLOB_MANIFEST_SHA256,
+    )
+
+
+def _git_worktree_blob_sha1(repository_root: Path, relative_path: str) -> str:
+    relative = safe_relative_path(relative_path).as_posix()
+    git_blob_sha1 = (
+        _git(
+            repository_root,
+            "hash-object",
+            f"--path={relative}",
+            relative,
         )
-    identities = {
-        "benchmark/index.json": BENCHMARK_INDEX_SHA256,
-        "benchmark/receipt.json": BENCHMARK_RECEIPT_SHA256,
-        "benchmark/benchmark.json": BENCHMARK_REPORT_SHA256,
-        "study-declaration.json": DECLARATION_SHA256,
-    }
-    for relative_path, expected_sha256 in identities.items():
-        actual_sha256 = sha256_file(study_root / relative_path)
-        if actual_sha256 != expected_sha256:
-            raise EvidenceError("source_study_digest_drift", relative_path)
-    return {
-        "file_count": len(files),
-        "git_tree_sha1_at_main": SOURCE_STUDY_GIT_TREE_SHA1,
-        "manifest_sha256": manifest_sha256,
-        "path": SOURCE_STUDY_RELATIVE_PATH,
-    }
+        .decode("ascii")
+        .strip()
+    )
+    _require_git_sha1(git_blob_sha1, "implementation_git_blob_sha1")
+    return git_blob_sha1
 
 
 def _verify_closed_benchmark(repository_root: Path) -> dict[str, Any]:
@@ -384,6 +569,10 @@ def build_audit_record(repository_root: Path) -> dict[str, Any]:
     receipt = BenchmarkReceiptV4.from_dict(
         require_object(load_json(benchmark_root / "receipt.json"), "benchmark receipt")
     )
+    if len(receipt.closed_files) != _EXPECTED_CUSTODY["benchmark_closed_file_count"]:
+        raise EvidenceError("audit_custody_count_disagreement", "benchmark_closed_file_count")
+    if len(index.runs) != _EXPECTED_CUSTODY["run_count"]:
+        raise EvidenceError("audit_custody_count_disagreement", "run_count")
 
     entries: list[dict[str, Any]] = []
     reason_counts: Counter[str] = Counter()
@@ -403,6 +592,7 @@ def build_audit_record(repository_root: Path) -> dict[str, Any]:
     invalid_model_outputs = 0
     run_count_with_exclusions = 0
     unique_excluded_skeleton_ids: set[str] = set()
+    negation_and_affirmative_overlap_count = 0
 
     for indexed_run in index.runs:
         request, draft, artifact, communication_receipt, measurement = _load_run_records(
@@ -426,6 +616,11 @@ def build_audit_record(repository_root: Path) -> dict[str, Any]:
                     f"{indexed_run.run_path}:{exclusion.skeleton_id}",
                 )
             category, category_reason, features = _classify_text(draft_task.draft_text)
+            feature_set = frozenset(features)
+            negation_and_affirmative_overlap_count += int(
+                bool(feature_set & _NEGATION_FEATURES)
+                and bool(feature_set & _AFFIRMATIVE_PROCESS_FEATURES)
+            )
             entry: dict[str, Any] = {
                 "all_matched_terms": all_matches,
                 "artifact_sha256": communication_receipt.artifact_sha256,
@@ -574,56 +769,34 @@ def build_audit_record(repository_root: Path) -> dict[str, Any]:
             for category, counts in sorted(category_by_reason.items())
         },
         "category_counts": dict(sorted(category_counts.items())),
+        "negation_and_affirmative_feature_overlap_count": (negation_and_affirmative_overlap_count),
         "total_classified_entries": len(entries),
         "winning_matched_term_counts": dict(sorted(winning_term_counts.items())),
     }
     record: dict[str, Any] = {
-        "analysis_boundary": {
-            "classification_is_substantive_safety_truth": False,
-            "generated_benchmark_modified": False,
-            "model_inference_performed": False,
-            "raw_draft_text_republished": False,
-            "scope": "post_hoc_mechanical_classification_of_frozen_lexical_exclusions",
-        },
+        "analysis_boundary": dict(_EXPECTED_ANALYSIS_BOUNDARY),
         "audit_id": AUDIT_ID,
         "classification_contract": {
             "categories": list(_CATEGORIES),
             "classifier_id": CLASSIFIER_ID,
             "implementation_path": ("src/voxelscope/evidence_communication_v4_audit.py"),
-            "implementation_sha256": sha256_file(Path(__file__)),
-            "precedence": [
-                "explicit_negation_or_boundary_disclaimer",
-                "affirmative_clinical_process_statement",
-                "ambiguous_or_context_dependent",
-            ],
+            "implementation_git_blob_sha1": _git_worktree_blob_sha1(
+                root,
+                "src/voxelscope/evidence_communication_v4_audit.py",
+            ),
+            "precedence": list(_EXPECTED_CLASSIFIER_PRECEDENCE),
             "unit": "verifier_flagged_draft_entry",
         },
         "classification_summary": classification_summary,
-        "custody": {
-            "benchmark_closed_file_count": len(receipt.closed_files),
-            "benchmark_replay": "verified_offline",
-            "parsed_draft_count": len(index.runs),
-            "run_count": len(index.runs),
-            "source_tree_verified_before_analysis": True,
-        },
+        "custody": dict(_EXPECTED_CUSTODY),
         "entries": entries,
-        "interpretation": {
-            "benchmark_facts_are_observed_synthetic_results": True,
-            "categories_are_post_hoc_mechanical_labels": True,
-            "clinical_or_biomedical_claim": False,
-            "model_quality_or_safety_claim": False,
-            "reason": (
-                "Lexical matches and deterministic context features do not establish "
-                "whether draft text is substantively safe or unsafe."
-            ),
-            "v4_result_reinterpreted_or_overwritten": False,
-        },
+        "interpretation": dict(_EXPECTED_INTERPRETATION),
         "observed_benchmark_facts": observed_facts,
         "schema_version": AUDIT_SCHEMA_VERSION,
         "source": {
-            "benchmark_index_sha256": sha256_file(benchmark_root / "index.json"),
-            "benchmark_receipt_sha256": sha256_file(benchmark_root / "receipt.json"),
-            "benchmark_report_sha256": sha256_file(benchmark_root / "benchmark.json"),
+            "benchmark_index_sha256": BENCHMARK_INDEX_SHA256,
+            "benchmark_receipt_sha256": BENCHMARK_RECEIPT_SHA256,
+            "benchmark_report_sha256": BENCHMARK_REPORT_SHA256,
             "declaration_sha256": DECLARATION_SHA256,
             "replayed_benchmark_schema_version": replayed_benchmark["schema_version"],
             "study": source_identity,
@@ -667,7 +840,7 @@ def validate_audit_record(value: dict[str, Any]) -> None:
     if require_string(record["audit_id"], "audit_id") != AUDIT_ID:
         raise EvidenceError("unexpected_audit_id", str(record["audit_id"]))
 
-    strict_fields(
+    analysis_boundary = strict_fields(
         require_object(record["analysis_boundary"], "analysis_boundary"),
         {
             "classification_is_substantive_safety_truth",
@@ -678,13 +851,15 @@ def validate_audit_record(value: dict[str, Any]) -> None:
         },
         "analysis_boundary",
     )
+    if analysis_boundary != _EXPECTED_ANALYSIS_BOUNDARY:
+        raise EvidenceError("audit_analysis_boundary_drift", AUDIT_ID)
     contract = strict_fields(
         require_object(record["classification_contract"], "classification_contract"),
         {
             "categories",
             "classifier_id",
+            "implementation_git_blob_sha1",
             "implementation_path",
-            "implementation_sha256",
             "precedence",
             "unit",
         },
@@ -698,7 +873,22 @@ def validate_audit_record(value: dict[str, Any]) -> None:
         raise EvidenceError("audit_classifier_contract_drift", AUDIT_ID)
     if contract["implementation_path"] != ("src/voxelscope/evidence_communication_v4_audit.py"):
         raise EvidenceError("audit_classifier_contract_drift", AUDIT_ID)
-    require_sha256(require_string(contract["implementation_sha256"], "implementation_sha256"))
+    _require_git_sha1(
+        require_string(
+            contract["implementation_git_blob_sha1"],
+            "implementation_git_blob_sha1",
+        ),
+        "implementation_git_blob_sha1",
+    )
+    precedence = [
+        require_string(item, "precedence item")
+        for item in require_list(contract["precedence"], "precedence")
+    ]
+    if (
+        precedence != _EXPECTED_CLASSIFIER_PRECEDENCE
+        or contract["unit"] != "verifier_flagged_draft_entry"
+    ):
+        raise EvidenceError("audit_classifier_contract_drift", AUDIT_ID)
 
     entries = require_list(record["entries"], "entries")
     entry_keys = {
@@ -725,6 +915,10 @@ def validate_audit_record(value: dict[str, Any]) -> None:
     }
     category_counts: Counter[str] = Counter()
     reason_counts: Counter[str] = Counter()
+    all_term_counts: Counter[str] = Counter()
+    winning_term_counts: Counter[str] = Counter()
+    category_by_reason: dict[str, Counter[str]] = defaultdict(Counter)
+    negation_and_affirmative_overlap_count = 0
     identities: list[tuple[str, int, str]] = []
     for item in entries:
         entry = strict_fields(require_object(item, "audit entry"), entry_keys, "AuditEntry")
@@ -745,6 +939,7 @@ def validate_audit_record(value: dict[str, Any]) -> None:
             raise EvidenceError("invalid_audit_text_size", skeleton_id)
         if require_int(entry["draft_text_size_bytes"], "draft_text_size_bytes") <= 0:
             raise EvidenceError("invalid_audit_text_size", skeleton_id)
+        entry_lists: dict[str, list[str]] = {}
         for list_name in (
             "all_matched_terms",
             "context_features",
@@ -756,6 +951,37 @@ def validate_audit_record(value: dict[str, Any]) -> None:
             ]
             if not values or values != sorted(set(values)):
                 raise EvidenceError("invalid_audit_entry_list", list_name)
+            entry_lists[list_name] = values
+        all_matched_terms = set(entry_lists["all_matched_terms"])
+        winning_matched_terms = set(entry_lists["winning_matched_terms"])
+        context_features = set(entry_lists["context_features"])
+        verifier_reason = require_string(entry["verifier_reason"], "verifier_reason")
+        if (
+            not all_matched_terms <= _KNOWN_VERIFIER_TERMS
+            or not winning_matched_terms <= all_matched_terms
+            or verifier_reason not in _VERIFIER_TERMS_BY_REASON
+            or not winning_matched_terms <= set(_VERIFIER_TERMS_BY_REASON[verifier_reason])
+            or not context_features <= _KNOWN_CONTEXT_FEATURES
+        ):
+            raise EvidenceError("invalid_audit_entry_features", skeleton_id)
+        has_negation = bool(context_features & _NEGATION_FEATURES)
+        has_affirmative = bool(context_features & _AFFIRMATIVE_PROCESS_FEATURES)
+        expected_category = (
+            "explicit_negation_or_boundary_disclaimer"
+            if has_negation
+            else (
+                "affirmative_clinical_process_statement"
+                if has_affirmative
+                else "ambiguous_or_context_dependent"
+            )
+        )
+        if (
+            category != expected_category
+            or entry["category_reason_code"] != _EXPECTED_REASON_CODE_BY_CATEGORY[category]
+        ):
+            raise EvidenceError("invalid_audit_entry_classification", skeleton_id)
+        if has_negation and has_affirmative:
+            negation_and_affirmative_overlap_count += 1
         requirement_ids = [
             require_string(value, "requirement_ids item")
             for value in require_list(entry["requirement_ids"], "requirement_ids")
@@ -763,7 +989,10 @@ def validate_audit_record(value: dict[str, Any]) -> None:
         if not requirement_ids or len(requirement_ids) != len(set(requirement_ids)):
             raise EvidenceError("invalid_audit_entry_list", "requirement_ids")
         category_counts[category] += 1
-        reason_counts[require_string(entry["verifier_reason"], "verifier_reason")] += 1
+        reason_counts[verifier_reason] += 1
+        category_by_reason[category][verifier_reason] += 1
+        all_term_counts.update(all_matched_terms)
+        winning_term_counts.update(winning_matched_terms)
         identities.append((case_id, repeat_index, skeleton_id))
     if identities != sorted(identities) or len(identities) != len(set(identities)):
         raise EvidenceError("invalid_audit_entry_order", AUDIT_ID)
@@ -774,6 +1003,7 @@ def validate_audit_record(value: dict[str, Any]) -> None:
             "all_matched_term_counts",
             "category_by_verifier_reason",
             "category_counts",
+            "negation_and_affirmative_feature_overlap_count",
             "total_classified_entries",
             "winning_matched_term_counts",
         },
@@ -783,6 +1013,31 @@ def validate_audit_record(value: dict[str, Any]) -> None:
         raise EvidenceError("audit_category_count_disagreement", AUDIT_ID)
     if summary["category_counts"] != _EXPECTED_CATEGORY_COUNTS:
         raise EvidenceError("audit_expected_category_count_drift", AUDIT_ID)
+    derived_category_by_reason = {
+        category: dict(sorted(counts.items()))
+        for category, counts in sorted(category_by_reason.items())
+    }
+    if (
+        summary["category_by_verifier_reason"] != derived_category_by_reason
+        or summary["category_by_verifier_reason"] != _EXPECTED_CATEGORY_BY_REASON
+    ):
+        raise EvidenceError("audit_category_reason_count_disagreement", AUDIT_ID)
+    if (
+        summary["all_matched_term_counts"] != dict(sorted(all_term_counts.items()))
+        or summary["all_matched_term_counts"] != _EXPECTED_ALL_MATCHED_TERM_COUNTS
+    ):
+        raise EvidenceError("audit_all_term_count_disagreement", AUDIT_ID)
+    if (
+        summary["winning_matched_term_counts"] != dict(sorted(winning_term_counts.items()))
+        or summary["winning_matched_term_counts"] != _EXPECTED_WINNING_MATCHED_TERM_COUNTS
+    ):
+        raise EvidenceError("audit_winning_term_count_disagreement", AUDIT_ID)
+    if (
+        summary["negation_and_affirmative_feature_overlap_count"]
+        != negation_and_affirmative_overlap_count
+        or summary["negation_and_affirmative_feature_overlap_count"] != 0
+    ):
+        raise EvidenceError("audit_context_feature_overlap", AUDIT_ID)
     if summary["total_classified_entries"] != len(entries):
         raise EvidenceError("audit_entry_count_disagreement", AUDIT_ID)
     if dict(sorted(reason_counts.items())) != _EXPECTED_REASON_COUNTS:
@@ -875,7 +1130,7 @@ def validate_audit_record(value: dict[str, Any]) -> None:
         if facts[name] != expected:
             raise EvidenceError("audit_observed_count_disagreement", name)
 
-    strict_fields(
+    custody = strict_fields(
         require_object(record["custody"], "custody"),
         {
             "benchmark_closed_file_count",
@@ -886,7 +1141,9 @@ def validate_audit_record(value: dict[str, Any]) -> None:
         },
         "custody",
     )
-    strict_fields(
+    if custody != _EXPECTED_CUSTODY:
+        raise EvidenceError("audit_custody_assertion_drift", AUDIT_ID)
+    interpretation = strict_fields(
         require_object(record["interpretation"], "interpretation"),
         {
             "benchmark_facts_are_observed_synthetic_results",
@@ -898,6 +1155,8 @@ def validate_audit_record(value: dict[str, Any]) -> None:
         },
         "interpretation",
     )
+    if interpretation != _EXPECTED_INTERPRETATION:
+        raise EvidenceError("audit_interpretation_drift", AUDIT_ID)
     source = strict_fields(
         require_object(record["source"], "source"),
         {
@@ -912,14 +1171,21 @@ def validate_audit_record(value: dict[str, Any]) -> None:
     )
     study = strict_fields(
         require_object(source["study"], "source study"),
-        {"file_count", "git_tree_sha1_at_main", "manifest_sha256", "path"},
+        {
+            "git_blob_manifest_sha256",
+            "git_tree_sha1",
+            "path",
+            "tracked_file_count",
+            "worktree_status",
+        },
         "source study",
     )
     if (
-        study["file_count"] != SOURCE_STUDY_FILE_COUNT
-        or study["manifest_sha256"] != SOURCE_STUDY_MANIFEST_SHA256
-        or study["git_tree_sha1_at_main"] != SOURCE_STUDY_GIT_TREE_SHA1
+        study["tracked_file_count"] != SOURCE_STUDY_FILE_COUNT
+        or study["git_blob_manifest_sha256"] != SOURCE_STUDY_GIT_BLOB_MANIFEST_SHA256
+        or study["git_tree_sha1"] != SOURCE_STUDY_GIT_TREE_SHA1
         or study["path"] != SOURCE_STUDY_RELATIVE_PATH
+        or study["worktree_status"] != "git_blob_equivalent_clean"
     ):
         raise EvidenceError("audit_source_identity_drift", AUDIT_ID)
     expected_source_digests = {
@@ -931,6 +1197,14 @@ def validate_audit_record(value: dict[str, Any]) -> None:
     for name, expected in expected_source_digests.items():
         if source[name] != expected:
             raise EvidenceError("audit_source_digest_drift", name)
+    if (
+        source["replayed_benchmark_schema_version"]
+        != "voxelscope/evidence-communication-benchmark/v4"
+    ):
+        raise EvidenceError(
+            "audit_source_identity_drift",
+            "replayed_benchmark_schema_version",
+        )
 
 
 def verify_committed_audit(

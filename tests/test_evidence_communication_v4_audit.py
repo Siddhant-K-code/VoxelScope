@@ -2,23 +2,32 @@
 from __future__ import annotations
 
 import copy
-import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
 
-from voxelscope.canonical import EvidenceError, load_json, write_json
+from voxelscope.canonical import EvidenceError, load_json
 from voxelscope.evidence_communication_v4_audit import (
     AUDIT_RELATIVE_PATH,
-    SOURCE_STUDY_RELATIVE_PATH,
     build_audit_record,
+    git_tree_identity,
     validate_audit_record,
     verify_committed_audit,
-    verify_source_study_tree,
+    verify_git_tree_custody,
 )
 from voxelscope.evidence_communication_v4_audit_cli import main as audit_cli_main
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _git(repository: Path, *arguments: str) -> None:
+    subprocess.run(
+        ["git", *arguments],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
 
 
 def test_committed_v4_lexical_audit_recomputes_exactly() -> None:
@@ -47,6 +56,7 @@ def test_committed_v4_lexical_audit_recomputes_exactly() -> None:
         "returned": 270,
         "unknown": 0,
     }
+    assert audit["classification_summary"]["negation_and_affirmative_feature_overlap_count"] == 0
     assert all("draft_text" not in entry for entry in audit["entries"])
 
 
@@ -72,35 +82,154 @@ def test_audit_record_rejects_schema_and_count_disagreement() -> None:
     assert count_error.value.code == "audit_category_count_disagreement"
 
 
-def test_audit_fails_closed_on_source_tree_missing_extra_and_digest_drift(
+@pytest.mark.parametrize(
+    ("mutation", "error_code"),
+    [
+        ("analysis_boundary", "audit_analysis_boundary_drift"),
+        ("custody", "audit_custody_assertion_drift"),
+        ("interpretation", "audit_interpretation_drift"),
+        ("precedence", "audit_classifier_contract_drift"),
+        ("unit", "audit_classifier_contract_drift"),
+        ("all_terms", "audit_all_term_count_disagreement"),
+        ("category_reasons", "audit_category_reason_count_disagreement"),
+        ("feature_overlap", "audit_context_feature_overlap"),
+        ("source_status", "audit_source_identity_drift"),
+        ("entry_reason_code", "invalid_audit_entry_classification"),
+        ("entry_matched_term", "invalid_audit_entry_features"),
+    ],
+)
+def test_audit_record_rejects_assertion_tampering(
+    mutation: str,
+    error_code: str,
+) -> None:
+    audit = copy.deepcopy(load_json(ROOT / AUDIT_RELATIVE_PATH))
+    if mutation == "analysis_boundary":
+        audit["analysis_boundary"]["model_inference_performed"] = True
+    elif mutation == "custody":
+        audit["custody"]["benchmark_replay"] = "not_verified"
+    elif mutation == "interpretation":
+        audit["interpretation"]["model_quality_or_safety_claim"] = True
+    elif mutation == "precedence":
+        audit["classification_contract"]["precedence"].reverse()
+    elif mutation == "unit":
+        audit["classification_contract"]["unit"] = "different"
+    elif mutation == "all_terms":
+        audit["classification_summary"]["all_matched_term_counts"]["diagnos"] -= 1
+    elif mutation == "category_reasons":
+        audit["classification_summary"]["category_by_verifier_reason"][
+            "ambiguous_or_context_dependent"
+        ]["prohibited_diagnostic_or_prognostic_language"] -= 1
+    elif mutation == "feature_overlap":
+        audit["classification_summary"]["negation_and_affirmative_feature_overlap_count"] = 1
+    elif mutation == "source_status":
+        audit["source"]["study"]["worktree_status"] = "clean"
+    elif mutation == "entry_reason_code":
+        audit["entries"][0]["category_reason_code"] = "different"
+    elif mutation == "entry_matched_term":
+        audit["entries"][0]["all_matched_terms"].append("unknown")
+        audit["entries"][0]["all_matched_terms"].sort()
+    else:
+        raise AssertionError(mutation)
+
+    with pytest.raises(EvidenceError) as caught:
+        validate_audit_record(audit)
+    assert caught.value.code == error_code
+
+
+def test_git_custody_accepts_crlf_equivalence_and_rejects_real_drift(
     tmp_path: Path,
 ) -> None:
-    study = tmp_path / SOURCE_STUDY_RELATIVE_PATH
-    shutil.copytree(ROOT / SOURCE_STUDY_RELATIVE_PATH, study)
+    _git(tmp_path, "init")
+    _git(tmp_path, "config", "user.email", "audit@example.invalid")
+    _git(tmp_path, "config", "user.name", "Audit Test")
+    (tmp_path / ".gitattributes").write_bytes(b"*.txt text\n*.bin -text\n")
+    study = tmp_path / "study"
+    study.mkdir()
+    text_path = study / "note.txt"
+    binary_path = study / "payload.bin"
+    text_path.write_bytes(b"line one\nline two\n")
+    binary_path.write_bytes(b"\x00\x01\r\n\xff")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-m", "fixture")
+    identity = git_tree_identity(tmp_path, "study")
+    expected = {
+        "expected_tree_sha1": identity["git_tree_sha1"],
+        "expected_file_count": identity["tracked_file_count"],
+        "expected_blob_manifest_sha256": identity["git_blob_manifest_sha256"],
+    }
 
-    missing = study / "benchmark/runs/supported-agreement/repeat-0000/draft.json"
-    missing.unlink()
-    with pytest.raises(EvidenceError) as missing_error:
-        verify_source_study_tree(tmp_path)
-    assert missing_error.value.code == "source_study_tree_drift"
+    text_path.write_bytes(b"line one\r\nline two\r\n")
+    assert verify_git_tree_custody(tmp_path, "study", **expected) == identity
 
-    shutil.copyfile(
-        ROOT
-        / SOURCE_STUDY_RELATIVE_PATH
-        / "benchmark/runs/supported-agreement/repeat-0000/draft.json",
-        missing,
-    )
-    extra = study / "unexpected.json"
-    write_json(extra, {"unexpected": True})
+    text_path.write_bytes(b"line one\r\nchanged\r\n")
+    with pytest.raises(EvidenceError) as content_error:
+        verify_git_tree_custody(tmp_path, "study", **expected)
+    assert content_error.value.code == "source_study_worktree_drift"
+
+    _git(tmp_path, "checkout", "--", "study/note.txt")
+    extra = study / "extra.txt"
+    extra.write_bytes(b"extra\n")
     with pytest.raises(EvidenceError) as extra_error:
-        verify_source_study_tree(tmp_path)
-    assert extra_error.value.code == "source_study_tree_drift"
+        verify_git_tree_custody(tmp_path, "study", **expected)
+    assert extra_error.value.code == "source_study_worktree_drift"
 
     extra.unlink()
-    missing.write_bytes(missing.read_bytes() + b" ")
-    with pytest.raises(EvidenceError) as digest_error:
-        verify_source_study_tree(tmp_path)
-    assert digest_error.value.code == "source_study_tree_drift"
+    text_path.unlink()
+    with pytest.raises(EvidenceError) as missing_error:
+        verify_git_tree_custody(tmp_path, "study", **expected)
+    assert missing_error.value.code == "source_study_worktree_drift"
+
+    _git(tmp_path, "checkout", "--", "study/note.txt")
+    binary_path.write_bytes(b"\x00\x01\r\n\xfe")
+    with pytest.raises(EvidenceError) as binary_error:
+        verify_git_tree_custody(tmp_path, "study", **expected)
+    assert binary_error.value.code == "source_study_worktree_drift"
+
+
+def test_git_custody_rejects_declared_tree_or_blob_manifest_drift(
+    tmp_path: Path,
+) -> None:
+    _git(tmp_path, "init")
+    _git(tmp_path, "config", "user.email", "audit@example.invalid")
+    _git(tmp_path, "config", "user.name", "Audit Test")
+    study = tmp_path / "study"
+    study.mkdir()
+    (study / "record.json").write_bytes(b'{"value":1}\n')
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-m", "fixture")
+    identity = git_tree_identity(tmp_path, "study")
+
+    with pytest.raises(EvidenceError) as tree_error:
+        verify_git_tree_custody(
+            tmp_path,
+            "study",
+            expected_tree_sha1="0" * 40,
+            expected_file_count=identity["tracked_file_count"],
+            expected_blob_manifest_sha256=identity["git_blob_manifest_sha256"],
+        )
+    assert tree_error.value.code == "source_study_git_identity_drift"
+
+    with pytest.raises(EvidenceError) as manifest_error:
+        verify_git_tree_custody(
+            tmp_path,
+            "study",
+            expected_tree_sha1=identity["git_tree_sha1"],
+            expected_file_count=identity["tracked_file_count"],
+            expected_blob_manifest_sha256="0" * 64,
+        )
+    assert manifest_error.value.code == "source_study_git_identity_drift"
+
+    (study / "record.json").write_bytes(b'{"value":2}\n')
+    _git(tmp_path, "add", "study/record.json")
+    with pytest.raises(EvidenceError) as index_error:
+        verify_git_tree_custody(
+            tmp_path,
+            "study",
+            expected_tree_sha1=identity["git_tree_sha1"],
+            expected_file_count=identity["tracked_file_count"],
+            expected_blob_manifest_sha256=identity["git_blob_manifest_sha256"],
+        )
+    assert index_error.value.code == "source_study_index_drift"
 
 
 def test_audit_cli_recomputes_without_model_or_network(

@@ -274,12 +274,15 @@ unsafe-text, clinical, biomedical, or model-quality conclusions.
 The prospective
 [v5 deterministic discourse-planner contract](docs/evidence-communication-v5-discourse-planner-contract.md)
 removes free-form model prose from the future interface. A local model may propose
-only enumerated ordering, optional-unit, caveat-placement, and audience-profile
-decisions over code-owned unit IDs. A first-class deterministic no-model baseline
-uses the same request, verifier, renderer, and budgets; parity or failure to show a
-preregistered strict objective advantage requires removing the model from that
-layer. This milestone is a design contract only: it implements no v5 compiler,
-declares no execution, and presents no v5 fixture as model evidence.
+only enumerated ordering, optional-unit, and caveat-placement decisions over
+code-owned unit IDs; the caller freezes the audience profile for both planners. A
+first-class no-model baseline exactly optimizes the complete finite feasible plan
+set with frozen lexicographic objectives and the same request, verifier, renderer,
+and budgets. Those objectives leave no model-eligible value endpoint, so the
+contract requires deterministic v5 first and stops before inference unless a
+separately reviewed prospective objective establishes eligibility. This milestone
+is a design contract only: it implements no v5 compiler, declares no execution,
+and presents no v5 fixture as model evidence.
 
 The
 [first observed Qwen3 8B Q8_0 local-model study](research/gbm-evidence-communication-qwen3-8b-q8-study-v1/README.md)
