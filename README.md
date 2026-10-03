@@ -73,6 +73,9 @@ src/voxelscope/
   evidence_communication_cli.py  Separate offline communication command-line interface
   evidence_communication_v4_audit.py  Reproducible post-hoc v4 lexical audit
   evidence_communication_v4_audit_cli.py  Offline audit recomputation and verification
+  evidence_communication_v5_records.py  Strict no-model v5 planner records
+  evidence_communication_v5.py  Exact deterministic planner, publication, and replay
+  evidence_communication_v5_cli.py  Offline deterministic v5 command-line interface
   custody_records.py  Versioned source and acquisition records
   real_data_contract.py  Trusted milestone 2 source and plan pins
   one_volume_records.py  Typed milestone 3 source-decision evidence
@@ -283,6 +286,13 @@ contract requires deterministic v5 first and stops before inference unless a
 separately reviewed prospective objective establishes eligibility. This milestone
 is a design contract only: it implements no v5 compiler, declares no execution,
 and presents no v5 fixture as model evidence.
+
+The isolated
+[deterministic v5 implementation](docs/evidence-communication-v5-discourse-planner.md)
+now closes that prospective requirement with bounded complete enumeration,
+machine-checkable optimality certificates, canonical code-owned rendering,
+atomic no-clobber publication, and model-free offline replay. Its shipped control
+case is contract/test evidence only; no inference study or model path is added.
 
 The
 [first observed Qwen3 8B Q8_0 local-model study](research/gbm-evidence-communication-qwen3-8b-q8-study-v1/README.md)

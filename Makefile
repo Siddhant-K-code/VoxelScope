@@ -27,6 +27,7 @@ custody-validate:
 	uv run python -m voxelscope.milestone8_cli public-verify --bundle research/milestone-8-v2
 	uv run python -m voxelscope.evidence_communication_v4_cli declaration-verify --repository-root .
 	uv run python -m voxelscope.evidence_communication_v4_audit_cli verify --repository-root .
+	uv run python -m voxelscope.evidence_communication_v5_cli contract-verify --repository-root .
 	uv run voxelscope custody scan-public --root .
 
 demo:
