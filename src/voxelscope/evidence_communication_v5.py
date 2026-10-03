@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import hashlib
 import itertools
 import math
@@ -12,7 +13,7 @@ import tempfile
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from .atomic import path_occupied, rename_no_replace
 from .canonical import (
@@ -1038,11 +1039,47 @@ def _verify_staged_records_v5(stage: Path, expected_records: _BuiltRecordsV5) ->
 
 
 def _fsync_file(path: Path) -> None:
-    with path.open("rb") as stream:
+    with path.open("r+b") as stream:
+        stream.flush()
         os.fsync(stream.fileno())
 
 
 def _fsync_directory(path: Path) -> None:
+    if os.name == "nt":
+        ctypes_windows = cast(Any, ctypes)
+        win_dll = ctypes_windows.WinDLL
+        kernel32: Any = win_dll("kernel32", use_last_error=True)
+        create_file = kernel32.CreateFileW
+        create_file.argtypes = [
+            ctypes.c_wchar_p,
+            ctypes.c_uint32,
+            ctypes.c_uint32,
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.c_uint32,
+            ctypes.c_void_p,
+        ]
+        create_file.restype = ctypes.c_void_p
+        handle = create_file(
+            str(path),
+            0x40000000,
+            0x00000001 | 0x00000002 | 0x00000004,
+            None,
+            3,
+            0x02000000,
+            None,
+        )
+        invalid_handle = ctypes.c_void_p(-1).value
+        if handle == invalid_handle:
+            error_number = ctypes_windows.get_last_error()
+            raise OSError(error_number, os.strerror(error_number), str(path))
+        try:
+            if not kernel32.FlushFileBuffers(handle):
+                error_number = ctypes_windows.get_last_error()
+                raise OSError(error_number, os.strerror(error_number), str(path))
+        finally:
+            kernel32.CloseHandle(handle)
+        return
     descriptor = os.open(path, os.O_RDONLY)
     try:
         os.fsync(descriptor)
