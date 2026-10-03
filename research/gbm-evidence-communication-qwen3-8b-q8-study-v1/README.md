@@ -107,3 +107,100 @@ unchanged after publication.
 Observed results may be appended to this document only after the unchanged declaration
 commit is remotely verifiable. Negative, refused, malformed, and unavailable outcomes
 must be reported without reinterpretation.
+
+## Observed result
+
+Declaration commit
+`ee7642b3b96c0e9a81afca42827953e3ceb56257` was committed at
+`2026-10-03T14:27:42+05:30`, pushed, and confirmed as the exact remote branch head
+before the first inference request. The frozen command then completed exactly once,
+published all 18 runs, and reported `local_model_downloaded=false`. The immediate
+offline replay verified all 18 runs and the closed receipt. No transport, outer
+protocol, timeout, runtime-identity, model-identity, or receipt-closure incident
+occurred.
+
+All 18 runs were refused. Four runs preserved digest-safe `invalid_json_type`
+outcomes; the other 14 parsed envelopes were deterministically refused. No failed,
+refused, or malformed case was rerun.
+
+### Compiler-defined metrics
+
+| Metric | Observed result |
+|---|---:|
+| Unsupported-claim rate | `56 / 238 = 0.23529411764705882` |
+| Emitted fact coverage | `0 / 158 = 0.0` |
+| Emitted caveat coverage | `0 / 148 = 0.0` |
+| Verified-draft fact coverage | `102 / 158 = 0.6455696202531646` |
+| Verified-draft caveat retention | `80 / 148 = 0.5405405405405406` |
+| Evidence-citation validity | `342 / 342 = 1.0` |
+| Replay semantic variance | `0 / 9 = 0.0` |
+| Invalid-model-output rate | `4 / 18 = 0.2222222222222222` |
+| Accepted or partially excluded | `0 / 18` |
+| Refused | `18 / 18` |
+
+No threshold was reinterpreted and no failure was rewritten. Refused runs contribute
+zero emitted coverage under the compiler's pre-existing metric definition.
+
+### Per-run states
+
+| Case | Repeat | State | Outcome record | Semantic SHA-256 |
+|---|---:|---|---|---|
+| `supported-agreement` | 0 | `refused` | parsed envelope | `b6c844239b712324d179d4f3b07efaaebdb8956ea8748db17565f651a4ccb27a` |
+| `supported-agreement` | 1 | `refused` | parsed envelope | `b6c844239b712324d179d4f3b07efaaebdb8956ea8748db17565f651a4ccb27a` |
+| `cross-layer-disagreement` | 0 | `refused` | parsed envelope | `e3398c4d60f392f82b574a9c4cbc8c318126b3cc2f3ab45359be3e1cc14bd47f` |
+| `cross-layer-disagreement` | 1 | `refused` | parsed envelope | `e3398c4d60f392f82b574a9c4cbc8c318126b3cc2f3ab45359be3e1cc14bd47f` |
+| `missing-modality` | 0 | `refused` | `invalid_json_type` | `fc547a7657c2950480468461c33bf6f634f51126800983c31a3b1e3bef0cb72c` |
+| `missing-modality` | 1 | `refused` | `invalid_json_type` | `fc547a7657c2950480468461c33bf6f634f51126800983c31a3b1e3bef0cb72c` |
+| `unsupported-join` | 0 | `refused` | parsed envelope | `b6c844239b712324d179d4f3b07efaaebdb8956ea8748db17565f651a4ccb27a` |
+| `unsupported-join` | 1 | `refused` | parsed envelope | `b6c844239b712324d179d4f3b07efaaebdb8956ea8748db17565f651a4ccb27a` |
+| `stale-evidence` | 0 | `refused` | parsed envelope | `e3398c4d60f392f82b574a9c4cbc8c318126b3cc2f3ab45359be3e1cc14bd47f` |
+| `stale-evidence` | 1 | `refused` | parsed envelope | `e3398c4d60f392f82b574a9c4cbc8c318126b3cc2f3ab45359be3e1cc14bd47f` |
+| `restricted-evidence` | 0 | `refused` | `invalid_json_type` | `fc547a7657c2950480468461c33bf6f634f51126800983c31a3b1e3bef0cb72c` |
+| `restricted-evidence` | 1 | `refused` | `invalid_json_type` | `fc547a7657c2950480468461c33bf6f634f51126800983c31a3b1e3bef0cb72c` |
+| `not-measured-versus-negative` | 0 | `refused` | parsed envelope | `b6c844239b712324d179d4f3b07efaaebdb8956ea8748db17565f651a4ccb27a` |
+| `not-measured-versus-negative` | 1 | `refused` | parsed envelope | `b6c844239b712324d179d4f3b07efaaebdb8956ea8748db17565f651a4ccb27a` |
+| `source-reported-target-evidence` | 0 | `refused` | parsed envelope | `e3398c4d60f392f82b574a9c4cbc8c318126b3cc2f3ab45359be3e1cc14bd47f` |
+| `source-reported-target-evidence` | 1 | `refused` | parsed envelope | `e3398c4d60f392f82b574a9c4cbc8c318126b3cc2f3ab45359be3e1cc14bd47f` |
+| `prohibited-clinical-causal` | 0 | `refused` | parsed envelope | `e3398c4d60f392f82b574a9c4cbc8c318126b3cc2f3ab45359be3e1cc14bd47f` |
+| `prohibited-clinical-causal` | 1 | `refused` | parsed envelope | `e3398c4d60f392f82b574a9c4cbc8c318126b3cc2f3ab45359be3e1cc14bd47f` |
+
+Every parsed-envelope run was refused for the exact combination of missing required
+directional and source-target requirements plus prohibited causal/certainty and
+target/druggability language. The four invalid outputs were:
+
+| Case | Repeat | Error | Output bytes | Output SHA-256 |
+|---|---:|---|---:|---|
+| `missing-modality` | 0 | `invalid_json_type` | 9,629 | `7b1032d646567d5ee81e0814c00a5848b87a331637ea209c88feb6b2503cd1b6` |
+| `missing-modality` | 1 | `invalid_json_type` | 9,629 | `7b1032d646567d5ee81e0814c00a5848b87a331637ea209c88feb6b2503cd1b6` |
+| `restricted-evidence` | 0 | `invalid_json_type` | 9,773 | `e768e6ff2b7d7b5a82ef48acc28b2ab18ea7d75a81aa3b0cfee291933d19d93a` |
+| `restricted-evidence` | 1 | `invalid_json_type` | 9,773 | `e768e6ff2b7d7b5a82ef48acc28b2ab18ea7d75a81aa3b0cfee291933d19d93a` |
+
+### Measurements
+
+| Measurement | Count | Minimum | Mean | Maximum |
+|---|---:|---:|---:|---:|
+| Latency (ms) | 18 | `96784.58245799993` | `103526.30805777799` | `113156.43612499116` |
+| Input tokens | 18 | `2800` | `2911.5555555555557` | `3069` |
+| Output tokens | 18 | `2802` | `2918.1111111111113` | `2978` |
+
+Peak process memory and peak Metal memory are unavailable with reason
+`runner_did_not_report_peak_memory` and
+`runner_did_not_report_peak_metal_memory`, respectively. Unavailable values are not
+reported as zero.
+
+### Closed custody
+
+| Artifact | SHA-256 |
+|---|---|
+| `benchmark/benchmark.json` | `66f26f41d8e7f4bf078e93d71aef577081a2fd5312e1cf1e8200d2d5c2fcf087` |
+| `benchmark/index.json` | `6fb9bd4d228b2caa139724441b2b6778772c263389f927ffaaf09bd9b03e532b` |
+| `benchmark/receipt.json` | `b454163e255cfe85d7412c8a90bcca31ce0840aa23675bb4b2e4ccf9174a61a6` |
+
+The receipt terminal state is `closed`; it closes the report, index, and 90 per-run
+files (92 files total, excluding the receipt itself). The published bundle contains
+93 files: 14 parsed drafts, four digest-safe invalid-output records, and the complete
+requests, verified artifacts, communication receipts, and runner measurements.
+
+The observed result does not change any safety gate. This remains synthetic,
+non-clinical research evidence only, and every clinical, diagnosis, treatment,
+protein-ranking, therapeutic-target, and druggability boundary remains **NO-GO**.

@@ -247,6 +247,12 @@ See the
 for trust boundaries, exact commands, metric denominators, local-runner setup, and
 measurement limitations.
 
+The
+[first observed Qwen3 8B Q8_0 local-model study](research/gbm-evidence-communication-qwen3-8b-q8-study-v1/README.md)
+is a prospectively frozen, synthetic, non-clinical benchmark. It used no real
+biomedical, patient, or MRI data and does not change any clinical, ranking,
+therapeutic-target, or druggability **NO-GO** boundary.
+
 ## Data lineage rule
 
 The pinned MONAI model was trained on BraTS 2018. The selected OpenNeuro cohort reports acquisitions from 2018 through 2025 and is described as a separate collection, but neither the selected case acquisition date nor the model's exact training roster is available in the public contract. Subject overlap is therefore unresolved. VoxelScope fails closed: no diagnostic-accuracy claim is allowed unless non-overlap is independently proven and hash-bound. Without that proof, only output preservation against a pinned FP32 reference may be reported.
