@@ -87,6 +87,8 @@ latency, tokens, task metrics, and all v5 control evidence are not directly
 comparable across generations. The table does not establish model quality,
 causality, safety, generalization, significance, or superiority.
 
+Read the design story: [Structure fixed the interface. Exact optimization removed the model.](docs/articles/structure-fixed-the-interface.md)
+
 ## Seven-day evolution
 
 The trailing calendar window is 2026-09-28 through 2026-10-04, inclusive.

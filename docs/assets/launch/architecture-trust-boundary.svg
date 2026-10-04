@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="hero-title hero-desc">
+<title id="hero-title">VoxelScope deterministic trust boundary</title>
+<desc id="hero-desc">Evidence identity and typed semantics enter a pre-inference eligibility gate. The model path is ineligible. An exact optimizer, code-owned renderer, closed receipt, and offline replay complete publication.</desc>
+<rect width="1600" height="900" fill="#0B1320"/>
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#2A3A50"/></marker></defs>
+<text x="80" y="86" fill="#FF9F1C" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="700" text-anchor="start">THE DETERMINISTIC TRUST BOUNDARY</text>
+<text x="80" y="158" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="58" font-weight="700" text-anchor="start">Structure fixed the interface.</text>
+<text x="80" y="226" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="58" font-weight="700" text-anchor="start">Exact optimization removed the model.</text>
+<text x="80" y="282" fill="#9FB0C3" font-family="Inter, Arial, sans-serif" font-size="25" font-weight="400" text-anchor="start">Code owns identity, semantics, gates, prose, custody, replay, and publication.</text>
+<rect x="80" y="370" width="210" height="140" rx="24" fill="#111D2E" stroke="#69A7FF" stroke-width="3"/>
+<text x="104" y="414" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="27" font-weight="700" text-anchor="start">Evidence</text>
+<text x="104" y="449" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="27" font-weight="700" text-anchor="start">identity</text>
+<text x="104" y="486" fill="#9FB0C3" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="400" text-anchor="start">hash-bound</text>
+<path d="M 300 440 H 320" stroke="#2A3A50" stroke-width="4" marker-end="url(#arrow)"/>
+<rect x="330" y="370" width="210" height="140" rx="24" fill="#111D2E" stroke="#69A7FF" stroke-width="3"/>
+<text x="354" y="414" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="27" font-weight="700" text-anchor="start">Typed</text>
+<text x="354" y="449" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="27" font-weight="700" text-anchor="start">semantics</text>
+<text x="354" y="486" fill="#9FB0C3" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="400" text-anchor="start">facts + caveats</text>
+<path d="M 550 440 H 570" stroke="#2A3A50" stroke-width="4" marker-end="url(#arrow)"/>
+<rect x="580" y="370" width="210" height="140" rx="24" fill="#111D2E" stroke="#FF9F1C" stroke-width="3"/>
+<text x="604" y="414" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="27" font-weight="700" text-anchor="start">Eligibility</text>
+<text x="604" y="449" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="27" font-weight="700" text-anchor="start">gate</text>
+<text x="604" y="486" fill="#9FB0C3" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="400" text-anchor="start">before inference</text>
+<path d="M 800 440 H 820" stroke="#2A3A50" stroke-width="4" marker-end="url(#arrow)"/>
+<rect x="830" y="370" width="210" height="140" rx="24" fill="#111D2E" stroke="#2EC4B6" stroke-width="3"/>
+<text x="854" y="414" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="27" font-weight="700" text-anchor="start">Exact</text>
+<text x="854" y="449" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="27" font-weight="700" text-anchor="start">optimizer</text>
+<text x="854" y="486" fill="#9FB0C3" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="400" text-anchor="start">complete search</text>
+<path d="M 1050 440 H 1070" stroke="#2A3A50" stroke-width="4" marker-end="url(#arrow)"/>
+<rect x="1080" y="370" width="210" height="140" rx="24" fill="#111D2E" stroke="#2EC4B6" stroke-width="3"/>
+<text x="1104" y="414" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="27" font-weight="700" text-anchor="start">Code</text>
+<text x="1104" y="449" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="27" font-weight="700" text-anchor="start">renderer</text>
+<text x="1104" y="486" fill="#9FB0C3" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="400" text-anchor="start">canonical prose</text>
+<path d="M 1300 440 H 1320" stroke="#2A3A50" stroke-width="4" marker-end="url(#arrow)"/>
+<rect x="1330" y="370" width="190" height="140" rx="24" fill="#111D2E" stroke="#2EC4B6" stroke-width="3"/>
+<text x="1354" y="414" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="27" font-weight="700" text-anchor="start">Closed</text>
+<text x="1354" y="449" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="27" font-weight="700" text-anchor="start">receipt</text>
+<text x="1354" y="486" fill="#9FB0C3" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="400" text-anchor="start">atomic custody</text>
+<rect x="580" y="575" width="460" height="143" rx="24" fill="#16263A" stroke="#FF9F1C" stroke-width="3"/>
+<text x="612" y="621" fill="#FF9F1C" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700" text-anchor="start">MODEL PATH</text>
+<text x="612" y="662" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700" text-anchor="start">Ineligible under the declared objective</text>
+<text x="612" y="696" fill="#9FB0C3" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="400" text-anchor="start">No prompt, API, model, or network action</text>
+<path d="M685 510 V575" stroke="#FF9F1C" stroke-width="3"/>
+<rect x="1080" y="575" width="440" height="143" rx="24" fill="#16263A" stroke="#2EC4B6" stroke-width="3"/>
+<text x="1112" y="621" fill="#2EC4B6" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700" text-anchor="start">OFFLINE REPLAY</text>
+<text x="1112" y="662" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="27" font-weight="700" text-anchor="start">Rebuild the same exact winner</text>
+<text x="1112" y="696" fill="#9FB0C3" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="400" text-anchor="start">No model or network required</text>
+<path d="M1425 510 V575" stroke="#2EC4B6" stroke-width="3"/>
+<text x="80" y="844" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="700" text-anchor="start">A model should earn its place against a strong deterministic baseline.</text>
+</svg>
