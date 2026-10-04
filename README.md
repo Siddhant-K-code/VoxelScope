@@ -49,7 +49,7 @@ flowchart LR
 
 | Surface | Evidence-backed state | Boundary |
 |---|---|---|
-| Baseline | `main` at `bb9b7b7` from [PR #23](https://github.com/Siddhant-K-code/VoxelScope/pull/23); [post-merge CI](https://github.com/Siddhant-K-code/VoxelScope/actions/runs/37179720138) passed all five jobs | Current as of 2026-10-04 |
+| v5 baseline | Merge `bb9b7b7` from [PR #23](https://github.com/Siddhant-K-code/VoxelScope/pull/23); [post-merge CI](https://github.com/Siddhant-K-code/VoxelScope/actions/runs/37179720138) passed all five jobs | Verified 2026-10-04 |
 | v5 communication | Exact finite optimization, code-owned prose, optimality certificate, atomic publication, offline replay | Control case only; `model_actions=0`, `network_actions=0` |
 | v3/v4 communication | Two immutable, synthetic, non-clinical local-model studies with complete custody trees | Descriptive compiler evidence, not model-quality or safety evidence |
 | GBM evidence atlas | Executable synthetic atlas plus open-source qualification and source freeze | No production ingestion, patient records, protein ranking, or actionability |
