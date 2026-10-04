@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="evolution-title evolution-desc">
+<title id="evolution-title">VoxelScope v3 to v5 evidence communication evolution</title>
+<desc id="evolution-desc">Version 3 let the model construct typed claims and exposed a repeatable interface mismatch. Version 4 used code-owned skeletons and removed invalid outputs in the observed study, while lexical exclusions and semantic variance remained. Version 5 used exact deterministic optimization with no model role.</desc>
+<rect width="1600" height="900" fill="#0B1320"/>
+<text x="80" y="84" fill="#FF9F1C" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="700" text-anchor="start">V3  -&gt;  V4  -&gt;  V5</text>
+<text x="80" y="154" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="50" font-weight="700" text-anchor="start">The interface changed. The evidence types changed.</text>
+<text x="80" y="196" fill="#9FB0C3" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="400" text-anchor="start">Contract evolution, not model-performance ordering.</text>
+<rect x="80" y="250" width="400" height="440" rx="24" fill="#111D2E" stroke="#69A7FF" stroke-width="3"/>
+<text x="110" y="330" fill="#69A7FF" font-family="Inter, Arial, sans-serif" font-size="54" font-weight="700" text-anchor="start">v3</text>
+<text x="110" y="374" fill="#9FB0C3" font-family="Inter, Arial, sans-serif" font-size="17" font-weight="700" text-anchor="start">OBSERVED MODEL EVIDENCE</text>
+<text x="110" y="424" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="700" text-anchor="start">Model constructs typed claims</text>
+<circle cx="117" cy="479" r="5" fill="#69A7FF"/>
+<text x="138" y="486" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="400" text-anchor="start">0 / 18 accepted</text>
+<circle cx="117" cy="533" r="5" fill="#69A7FF"/>
+<text x="138" y="540" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="400" text-anchor="start">4 / 18 invalid outer outputs</text>
+<circle cx="117" cy="587" r="5" fill="#69A7FF"/>
+<text x="138" y="594" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="400" text-anchor="start">0 / 9 semantic variance</text>
+<circle cx="117" cy="641" r="5" fill="#69A7FF"/>
+<text x="138" y="648" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="400" text-anchor="start">repeatable construction/verifier mismatch</text>
+<rect x="560" y="250" width="400" height="440" rx="24" fill="#111D2E" stroke="#FF9F1C" stroke-width="3"/>
+<text x="590" y="330" fill="#FF9F1C" font-family="Inter, Arial, sans-serif" font-size="54" font-weight="700" text-anchor="start">v4</text>
+<text x="590" y="374" fill="#9FB0C3" font-family="Inter, Arial, sans-serif" font-size="17" font-weight="700" text-anchor="start">OBSERVED MODEL EVIDENCE</text>
+<text x="590" y="424" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="700" text-anchor="start">Model selects 15 code-owned skeletons</text>
+<circle cx="597" cy="479" r="5" fill="#FF9F1C"/>
+<text x="618" y="486" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="400" text-anchor="start">270 / 270 tasks matched</text>
+<circle cx="597" cy="533" r="5" fill="#FF9F1C"/>
+<text x="618" y="540" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="400" text-anchor="start">0 / 18 invalid outputs</text>
+<circle cx="597" cy="587" r="5" fill="#FF9F1C"/>
+<text x="618" y="594" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="400" text-anchor="start">108 lexical exclusions</text>
+<circle cx="597" cy="641" r="5" fill="#FF9F1C"/>
+<text x="618" y="648" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="400" text-anchor="start">3 / 9 semantic variance</text>
+<rect x="1040" y="250" width="400" height="440" rx="24" fill="#111D2E" stroke="#2EC4B6" stroke-width="3"/>
+<text x="1070" y="330" fill="#2EC4B6" font-family="Inter, Arial, sans-serif" font-size="54" font-weight="700" text-anchor="start">v5</text>
+<text x="1070" y="374" fill="#9FB0C3" font-family="Inter, Arial, sans-serif" font-size="17" font-weight="700" text-anchor="start">CONTRACT + CONTROL EVIDENCE</text>
+<text x="1070" y="424" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="700" text-anchor="start">No model role in publication</text>
+<circle cx="1077" cy="479" r="5" fill="#2EC4B6"/>
+<text x="1098" y="486" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="400" text-anchor="start">finite feasible plan set</text>
+<circle cx="1077" cy="533" r="5" fill="#2EC4B6"/>
+<text x="1098" y="540" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="400" text-anchor="start">exact lexicographic optimum</text>
+<circle cx="1077" cy="587" r="5" fill="#2EC4B6"/>
+<text x="1098" y="594" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="400" text-anchor="start">model actions: 0</text>
+<circle cx="1077" cy="641" r="5" fill="#2EC4B6"/>
+<text x="1098" y="648" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="400" text-anchor="start">network actions: 0</text>
+<path d="M480 470 H540" stroke="#2A3A50" stroke-width="4"/>
+<path d="M530 462 L540 470 L530 478" fill="#2A3A50"/>
+<path d="M960 470 H1020" stroke="#2A3A50" stroke-width="4"/>
+<path d="M1010 462 L1020 470 L1010 478" fill="#2A3A50"/>
+<rect x="80" y="740" width="1440" height="98" rx="24" fill="#16263A" stroke="#2A3A50" stroke-width="3"/>
+<text x="112" y="785" fill="#9FB0C3" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="700" text-anchor="start">ONLY MATCHING V3/V4 ENDPOINTS</text>
+<text x="112" y="820" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="21" font-weight="700" text-anchor="start">Emitted fact coverage  v3: 0 / 158  |  v4: 42 / 158</text>
+<text x="790" y="820" fill="#F4F7FA" font-family="Inter, Arial, sans-serif" font-size="21" font-weight="700" text-anchor="start">Emitted caveat coverage  v3: 0 / 148  |  v4: 60 / 148</text>
+</svg>

@@ -1,0 +1,137 @@
+{
+  "annotation_color": "#FF9F1C",
+  "desktop_capture": false,
+  "generator": "docs/assets/launch/generate_launch_assets.py",
+  "gif_method": "deterministic scripted terminal animation assembled with imageio",
+  "inputs": [
+    {
+      "path": "research/gbm-evidence-communication-qwen3-8b-q8-study-v1/result-summary.json",
+      "sha256": "87a15a79eeec7a0ea988ff40d953d9f6d5f831b5568b20a8dc94782c107cc8c0"
+    },
+    {
+      "path": "research/gbm-evidence-communication-qwen3-8b-q8-study-v1/failure-analysis.json",
+      "sha256": "ec93745e5ca8b30d866ec64959ce06dc523832b2ac93156cecb2e36e48e5ac15"
+    },
+    {
+      "path": "research/gbm-evidence-communication-qwen3-8b-q8-study-v4/result-summary.json",
+      "sha256": "78e307ae234be712d097a88f408326839c7b59dbe45f1698f7ee699b00d4c7e6"
+    },
+    {
+      "path": "research/evidence-communication-v4-lexical-audit-v1/audit.json",
+      "sha256": "a5735aad10d496950429282613cf15f04bb00bef7f773eda874979224c5f8573"
+    },
+    {
+      "path": "research/evidence-communication-v5-discourse-planner-contract-v1/design-contract.json",
+      "sha256": "7389b004f6a75ca00399573bf3ca45074f2941e4ac9772385d88f69a422a4fae"
+    }
+  ],
+  "model_execution": false,
+  "network_execution": false,
+  "outputs": [
+    {
+      "dimensions": [
+        1600,
+        900
+      ],
+      "format": "SVG",
+      "path": "docs/assets/launch/architecture-trust-boundary.svg",
+      "sha256": "24b9d45e97bebbbd8ae4f824423653de4e675ff2db7e7192e5d801ca6c46d0ae",
+      "size_bytes": 6615
+    },
+    {
+      "dimensions": [
+        1600,
+        900
+      ],
+      "format": "PNG",
+      "path": "docs/assets/launch/architecture-trust-boundary.png",
+      "sha256": "83ad1de13129133417ba00b7da358726422ae1ec662181db7374953bc9d1d882",
+      "size_bytes": 81883
+    },
+    {
+      "dimensions": [
+        1600,
+        900
+      ],
+      "format": "SVG",
+      "path": "docs/assets/launch/v3-v4-v5-evolution.svg",
+      "sha256": "ae822333dff6e982a6efd1b0273eb2d5725b8ed05ca06c5b69138272f77b5952",
+      "size_bytes": 6294
+    },
+    {
+      "dimensions": [
+        1600,
+        900
+      ],
+      "format": "PNG",
+      "path": "docs/assets/launch/v3-v4-v5-evolution.png",
+      "sha256": "e6a30535fffcd315abc02f2f1a9f802725e191155632567668970f101e56085c",
+      "size_bytes": 82594
+    },
+    {
+      "assembly": "imageio.v3.imwrite",
+      "dimensions": [
+        1200,
+        720
+      ],
+      "durations_ms": [
+        900,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        650,
+        100,
+        1000,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        650,
+        100,
+        1000,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        700,
+        100,
+        1200,
+        1800
+      ],
+      "format": "GIF",
+      "frame_count": 47,
+      "loop": 0,
+      "path": "docs/assets/launch/v5-offline-workflow.gif",
+      "sha256": "0f574bb1730e97cf3a509af3763575f9ad14bf25aa30a0868ce9d7611337ebb7",
+      "size_bytes": 531882
+    }
+  ],
+  "regeneration_command": "uv run --with Pillow --with imageio --with numpy python docs/assets/launch/generate_launch_assets.py",
+  "schema_version": "voxelscope/public-launch-assets/v1",
+  "source_kind": "committed synthetic study, audit, contract, and control evidence"
+}
