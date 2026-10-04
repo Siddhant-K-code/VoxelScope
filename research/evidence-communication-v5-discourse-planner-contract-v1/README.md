@@ -27,3 +27,8 @@ See the
 for the architecture, caller-owned audience identity, exact deterministic
 optimizer, pre-inference eligibility gate, trust boundaries, state machine,
 custody, endpoints, decision rule, and explicit NO-GO boundaries.
+
+The merged contract is implemented by the isolated
+[deterministic v5 planner](../../docs/evidence-communication-v5-discourse-planner.md).
+That implementation remains no-model and labels its control output as contract
+and test evidence rather than observed model evidence.
